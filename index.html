@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ChaoDown Poki | Fresh Poke Bowls in Roseville, CA</title>
+<meta name="description" content="Family-owned poke shop in Roseville, CA. A taste of Hawaii, Chao Family style. Build your own poke bowl with fresh fish, house sauces, and over 20 toppings.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,700;1,9..144,500&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="icon" type="image/png" href="images/favicon.png">
+<link rel="apple-touch-icon" href="images/apple-touch-icon.png">
+<link rel="stylesheet" href="styles.css">
+<!--
+  PHOTOS for this page go in the "images" folder with these names:
+    hero.jpg, poke-bowl.jpg, korean-spicy-chicken.jpg, teriyaki-chicken.jpg,
+    shirt.jpg, gallery-1.jpg ... gallery-4.jpg
+  Optional logo: images/logo.png (round, shows next to the name)
+  Social links are set in site.js.
+-->
+</head>
+<body>
+
+<div class="announce">Sauces &amp; sides now available for individual sale!</div>
+
+<header class="site-header">
+  <nav class="wrap nav" aria-label="Main">
+    <a href="index.html" class="logo"><span class="logo-mark"><img src="images/logo.png" alt="" onerror="this.remove()"></span>ChaoDown Poki</a>
+    <button class="menu-toggle" aria-label="Open menu" aria-expanded="false">
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+    </button>
+    <ul class="nav-links">
+      <li><a href="index.html" class="active">Home</a></li>
+      <li><a href="menu.html">Menu</a></li>
+      <li><a href="about.html">About Us</a></li>
+      <li><a href="#visit">Visit</a></li>
+      <li><a href="tel:+19169182936" class="btn btn-primary">Call to Order</a></li>
+    </ul>
+  </nav>
+</header>
+
+<main>
+
+  <!-- ================= HERO ================= -->
+  <section class="hero">
+    <div class="wrap hero-grid">
+      <div>
+        <span class="eyebrow">Family owned · Roseville, CA</span>
+        <h1>A taste of Hawaii, <em>Chao Family style.</em></h1>
+        <p class="lead">Fresh, made-to-order poke bowls from a small family shop. Pick your fish, mix in one of our house sauces, and pile on as many toppings as you like.</p>
+        <div class="hero-actions">
+          <a href="menu.html" class="btn btn-primary">View Full Menu</a>
+          <a href="#visit" class="btn btn-ghost">Hours &amp; Location</a>
+        </div>
+        <ul class="hero-facts">
+          <li>Fresh raw &amp; cooked proteins</li>
+          <li>11 house sauces</li>
+          <li>20+ toppings</li>
+        </ul>
+      </div>
+      <div class="img-slot hero-photo" data-file="hero.jpg">
+        <img src="images/hero.jpg" alt="Inside ChaoDown Poki" onerror="this.parentElement.classList.add('empty')">
+        <div class="hero-badge"><strong>The Chao Family</strong>Serving Roseville</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= HOW IT WORKS ================= -->
+  <section class="dark">
+    <div class="wrap">
+      <span class="eyebrow">Your bowl, your way</span>
+      <h2>Build your bowl in five steps</h2>
+      <p class="lead">A variety of ingredients to fit all taste buds. First time? Just ask. We're happy to help you find your favorite combo.</p>
+      <div class="steps">
+        <div class="step">
+          <h3>Pick a size</h3>
+          <p>Regular, Large, or XLarge, from 2 to 5 scoops of protein.</p>
+        </div>
+        <div class="step">
+          <h3>Choose a base</h3>
+          <p>White rice, brown rice, spring mix, wonton chips, or half &amp; half.</p>
+        </div>
+        <div class="step">
+          <h3>Pick a protein</h3>
+          <p>Tuna, salmon, yellowtail, scallops, shrimp, chicken, tofu, and more.</p>
+        </div>
+        <div class="step">
+          <h3>Mix a sauce in</h3>
+          <p>From our sweet Chaodown Sauce to Korean Spicy and Wasabi Cream.</p>
+        </div>
+        <div class="step">
+          <h3>Top it off</h3>
+          <p>Avocado, seaweed salad, masago, crispy onion, and 20+ more.</p>
+        </div>
+      </div>
+      <div class="hero-actions">
+        <a href="menu.html" class="btn btn-ghost">See every option</a>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= FAVORITES ================= -->
+  <section>
+    <div class="wrap">
+      <div class="center">
+        <span class="eyebrow">Customer favorites</span>
+        <h2>Where to start</h2>
+        <p class="lead">Not sure what to get? Our regulars keep coming back for these.</p>
+      </div>
+      <div class="cards">
+        <article class="card">
+          <div class="img-slot" data-file="poke-bowl.jpg">
+            <img src="images/poke-bowl.jpg" alt="Build-your-own poke bowl" onerror="this.parentElement.classList.add('empty')">
+          </div>
+          <div class="card-body">
+            <div class="card-top"><h3>Poke Bowl</h3><span class="price">from $16.50</span></div>
+            <p>Build it your way with our ChaoDown Mix of tuna and salmon in a spicy-sweet sauce, or any protein you like.</p>
+            <div class="tags"><span class="tag">Most popular</span></div>
+          </div>
+        </article>
+        <article class="card">
+          <div class="img-slot" data-file="korean-spicy-chicken.jpg">
+            <img src="images/korean-spicy-chicken.jpg" alt="Korean Spicy Chicken bowl" onerror="this.parentElement.classList.add('empty')">
+          </div>
+          <div class="card-body">
+            <div class="card-top"><h3>Korean Spicy Chicken <span class="spice" data-level="2"></span></h3><span class="price">$16.50</span></div>
+            <p>For anyone who likes a little kick. Comes with your choice of egg roll, cheese wonton, or pot sticker.</p>
+            <div class="tags"><span class="tag">Cooked</span></div>
+          </div>
+        </article>
+        <article class="card">
+          <div class="img-slot" data-file="teriyaki-chicken.jpg">
+            <img src="images/teriyaki-chicken.jpg" alt="Teriyaki Chicken bowl" onerror="this.parentElement.classList.add('empty')">
+          </div>
+          <div class="card-body">
+            <div class="card-top"><h3>Teriyaki Chicken</h3><span class="price">$16.50</span></div>
+            <p>Tender chicken glazed in our teriyaki sauce. Comes with your choice of egg roll, cheese wonton, or pot sticker.</p>
+            <div class="tags"><span class="tag">Cooked</span></div>
+          </div>
+        </article>
+      </div>
+      <p class="center" style="margin-top: 36px;"><a href="menu.html" class="btn btn-primary">See the Full Menu</a></p>
+    </div>
+  </section>
+
+  <!-- ================= STORY TEASER ================= -->
+  <section class="story">
+    <div class="wrap split">
+      <div class="story-photos">
+        <div class="img-slot" data-file="shirt.jpg">
+          <img src="images/shirt.jpg" alt="ChaoDown Poki t-shirt" onerror="this.parentElement.classList.add('empty')">
+        </div>
+      </div>
+      <div>
+        <span class="eyebrow">Our story</span>
+        <h2>One shop. One family.</h2>
+        <p>ChaoDown Poki isn't a chain. It's the Chao family, behind the counter every day, making the kind of poke we love to eat ourselves.</p>
+        <p>We brought a taste of Hawaii to Roseville and added our own family touch, from our house sauces to the way we treat every customer like family.</p>
+        <a href="about.html" class="btn btn-ghost">Read Our Story</a>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= GALLERY + SOCIAL ================= -->
+  <section>
+    <div class="wrap center">
+      <span class="eyebrow">Follow along</span>
+      <h2>Fresh from our kitchen</h2>
+      <p class="lead">Specials, new bowls, and behind-the-counter moments. Follow us so you never miss what's new.</p>
+      <div class="gallery">
+        <div class="img-slot" data-file="gallery-1.jpg"><img src="images/gallery-1.jpg" alt="Salmon and tuna tossed in house sauce" onerror="this.parentElement.classList.add('empty')"></div>
+        <div class="img-slot" data-file="gallery-2.jpg"><img src="images/gallery-2.jpg" alt="Fresh-cut ahi tuna" onerror="this.parentElement.classList.add('empty')"></div>
+        <div class="img-slot" data-file="gallery-3.jpg"><img src="images/gallery-3.jpg" alt="Fresh-cut salmon" onerror="this.parentElement.classList.add('empty')"></div>
+        <div class="img-slot" data-file="gallery-4.jpg"><img src="images/gallery-4.jpg" alt="Fresh-cut yellowtail" onerror="this.parentElement.classList.add('empty')"></div>
+      </div>
+      <div class="social-row">
+        <a class="social" data-social="facebook"></a>
+        <a class="social" data-social="instagram"></a>
+        <a class="social" data-social="tiktok"></a>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= VISIT ================= -->
+  <section id="visit" style="padding-top: 0;">
+    <div class="wrap">
+      <div class="center">
+        <span class="eyebrow">Come say hi</span>
+        <h2>Visit us</h2>
+      </div>
+      <div class="visit-grid">
+        <div class="info-card">
+          <h3>📍 Location</h3>
+          <p>1950 Douglas Blvd, Suite B-3<br>Roseville, CA 95661</p>
+          <a href="https://www.google.com/maps/search/?api=1&query=ChaoDown+Poki+1950+Douglas+Blvd+B-3+Roseville+CA+95661" target="_blank" rel="noopener">Get directions →</a>
+        </div>
+        <div class="info-card">
+          <h3>🕒 Hours</h3>
+          <table class="hours">
+            <tr><td>Every day</td><td>11am – 8pm</td></tr>
+          </table>
+        </div>
+        <div class="info-card">
+          <h3>📞 Order ahead</h3>
+          <p>Call us and your bowl will be ready when you get here.</p>
+          <a href="tel:+19169182936">(916) 918-2936</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer class="site-footer">
+  <div class="wrap">
+    <div class="footer-grid">
+      <div>
+        <a href="index.html" class="logo"><span class="logo-mark"><img src="images/logo.png" alt="" onerror="this.remove()"></span>ChaoDown Poki</a>
+        <p style="margin-top: 12px;">A taste of Hawaii in Roseville, Chao Family style.</p>
+        <div class="social-icons">
+          <a class="social" data-social="facebook" data-icon-only></a>
+          <a class="social" data-social="instagram" data-icon-only></a>
+          <a class="social" data-social="tiktok" data-icon-only></a>
+        </div>
+      </div>
+      <div>
+        <h4>Visit</h4>
+        <p>1950 Douglas Blvd, Suite B-3<br>Roseville, CA 95661</p>
+        <p><a href="tel:+19169182936">(916) 918-2936</a></p>
+        <p><a href="mailto:Chaodownpoki@gmail.com">Chaodownpoki@gmail.com</a></p>
+      </div>
+      <div>
+        <h4>Explore</h4>
+        <ul>
+          <li><a href="index.html">Home</a></li>
+          <li><a href="menu.html">Menu</a></li>
+          <li><a href="about.html">About Us</a></li>
+        </ul>
+        <p style="margin-top: 12px;">Open daily 11am – 8pm</p>
+      </div>
+    </div>
+    <div class="footer-bottom">© <span class="year"></span> ChaoDown Poki. Family owned and operated in Roseville, CA.</div>
+  </div>
+</footer>
+
+<script src="site.js"></script>
+</body>
+</html>

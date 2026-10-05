@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3 -)",
+      "Bash(python3 scratchpad/make6.py images/4.jpg scratchpad/p6.jpg -1.05 0 6 0.75)",
+      "Bash(python3 -c ' *)"
+    ]
+  }
+}
