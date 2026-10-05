@@ -91,6 +91,8 @@ section { padding-block: clamp(64px, 9vw, 110px); }
 }
 .img-slot img { width: 100%; height: 100%; object-fit: cover; }
 .img-slot.empty img { display: none; }
+/* Menu photos: soften overly bright reds and lift crushed blacks */
+.menu-page .img-slot img { filter: saturate(0.88) contrast(0.94) brightness(1.03); }
 .img-slot.empty {
   display: grid;
   place-items: center;
@@ -279,6 +281,9 @@ body.edit-mode .img-slot:hover { outline-color: var(--mango); }
 .card-body p { color: var(--ink-soft); font-size: 0.97rem; margin-bottom: 14px; }
 .tags { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: auto; }
 .tag {
+  display: inline-flex;
+  align-items: center;
+  line-height: 1.2;
   font-size: 0.75rem;
   font-weight: 700;
   padding: 4px 10px;
@@ -407,6 +412,10 @@ body.edit-mode .img-slot:hover { outline-color: var(--mango); }
 
 .chips { display: flex; flex-wrap: wrap; gap: 8px; list-style: none; margin: 0; padding: 0; }
 .chips li {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3em;
+  line-height: 1.2;
   background: var(--cream);
   border: 1px solid rgba(16,48,47,0.1);
   border-radius: 999px;
