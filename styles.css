@@ -279,6 +279,8 @@ body.edit-mode .img-slot:hover { outline-color: var(--mango); }
 .card-top h3 { margin-bottom: 0.3em; }
 .price { font-weight: 700; color: var(--coral); white-space: nowrap; }
 .card-body p { color: var(--ink-soft); font-size: 0.97rem; margin-bottom: 14px; }
+.card-body p.kids-note { font-size: 0.88rem; font-style: italic; margin: 2px 0 0; }
+.card-body p.kids-note .price { font-style: normal; font-size: 0.85rem; }
 .tags { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: auto; }
 .tag {
   display: inline-flex;
