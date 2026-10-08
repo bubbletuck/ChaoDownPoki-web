@@ -22,7 +22,8 @@ export default {
     const url = new URL(request.url);
 
     if (url.pathname === "/api/menu") {
-      return json(MENU, 200, { "Cache-Control": "public, max-age=300" });
+      // no-cache: browsers re-check after every deploy, so the page and prices never disagree
+      return json(MENU, 200, { "Cache-Control": "no-cache" });
     }
     if (url.pathname === "/api/quote" || url.pathname === "/api/create-order") {
       if (request.method !== "POST") {

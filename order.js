@@ -27,6 +27,44 @@ let card = null;       // Square card form
 let busy = false;
 let attemptKey = null; // reused only if a checkout request never got an answer
 let hours = { open: false, message: "" };
+let CATEGORIES;
+let category = null;   // the sidebar category being shown
+const drafts = {};     // in-progress bowl per bowl category, kept while browsing others
+
+// ---------- Sidebar categories ----------
+
+function renderCategories() {
+  $("#cat-nav").innerHTML = `<ul>${MENU.categories.map(c => `
+    <li><button type="button" class="cat-btn" data-cat="${c.id}">
+      <strong>${esc(c.name)}</strong><small>${esc(c.blurb)}</small>
+    </button></li>`).join("")}</ul>`;
+  $("#cat-nav").addEventListener("click", e => {
+    const btn = e.target.closest("[data-cat]");
+    if (!btn) return;
+    showCategory(btn.dataset.cat);
+    // On small screens, jump up to the top of the newly shown items
+    const main = $("#order-main");
+    if (main.getBoundingClientRect().top < 0) main.scrollIntoView({ behavior: "smooth" });
+  });
+}
+
+function showCategory(id) {
+  const cat = CATEGORIES[id] || MENU.categories[0];
+  if (CATEGORIES[category]?.bowls) drafts[category] = bowl;
+  category = cat.id;
+
+  $("#cat-nav").querySelectorAll("[data-cat]").forEach(b => b.setAttribute("aria-current", b.dataset.cat === cat.id ? "true" : "false"));
+  $("#builder").hidden = !cat.bowls;
+  $("#extras").hidden = !cat.extras;
+  if (cat.bowls) {
+    bowl = drafts[cat.id] || newBowl(MENU.sizes.find(s => s.group === cat.bowls).id);
+    builderMessage("");
+    syncBuilder();
+  } else {
+    renderExtras(cat);
+  }
+  try { history.replaceState(null, "", "#" + cat.id); } catch {}
+}
 
 // ---------- Ordering hours ----------
 
@@ -114,7 +152,7 @@ function bowlProblem(b) {
   const included = includedScoops(size);
   if (scoops < included) return `Pick ${included - scoops} more scoop${included - scoops > 1 ? "s" : ""} of protein.`;
   if (scoops - included > MENU.maxExtraScoops) return `Up to ${MENU.maxExtraScoops} extra scoops per bowl.`;
-  if (Object.entries(b.prep || {}).some(([id, how]) => !b.proteins[id] || !PROTEINS[id].cookable || !PROTEIN_PREP[how])) return "Pick how you want your fish again.";
+  if (Object.entries(b.prep || {}).some(([id, how]) => !b.proteins[id] || !PROTEINS[id].prep?.includes(how))) return "Pick how you want your protein again.";
   if (b.sauces.some(id => !SAUCES[id])) return "Pick your sauces again.";
   const sauceOn = b.sauceOn || [];
   if (sauceOn.some(id => !SAUCE_PLACEMENTS[id])) return "Choose where you want your sauce again.";
@@ -156,12 +194,23 @@ function extraUnitPrice(x) {
   return item.options ? item.options.find(o => o.id === x.option).price : item.price;
 }
 
+// The options in one of an extra's choice groups (same as choiceItems() in src/menu.js)
+const choiceItems = group => group.from === "sauces" ? MENU.sauces : group.items;
+
 // Mirrors extraToLineItem() in src/menu.js
 function extraProblem(x) {
   const item = EXTRAS[x.id];
   if (!item || !Number.isInteger(x.quantity) || x.quantity < 1) return "Unknown item.";
   if (item.options ? !item.options.some(o => o.id === x.option && Number.isInteger(o.price)) : (x.option || !Number.isInteger(item.price))) return `Choose a size for ${item.name}.`;
-  if (item.choiceOf === "sauces" ? !SAUCES[x.choice] : x.choice) return `Choose which sauce for ${item.name}.`;
+  const picks = x.picks || {};
+  const groups = item.choices || [];
+  if (Object.keys(picks).some(g => !groups.some(c => c.id === g))) return `Choose again for ${item.name}.`;
+  for (const group of groups) {
+    const chosen = picks[group.id] || [];
+    const options = byId(choiceItems(group));
+    if (!Array.isArray(chosen) || chosen.some(id => !options[id]) || (group.single && chosen.length > 1)) return `Choose again for ${item.name}.`;
+    if (group.required && !chosen.length) return `Choose a ${group.name.toLowerCase()}.`;
+  }
   return null;
 }
 
@@ -173,8 +222,17 @@ function extraTitle(x) {
 
 function extraDetail(x) {
   const item = EXTRAS[x.id];
-  return x.choice ? SAUCES[x.choice].name : item.detail || "";
+  const picked = (item.choices || [])
+    .map(group => {
+      const options = byId(choiceItems(group));
+      return (x.picks?.[group.id] || []).map(id => options[id].name).join(", ");
+    })
+    .filter(Boolean);
+  return [item.detail, ...picked].filter(Boolean).join(" · ");
 }
+
+// Same item, size, and add-ons? Then it's one cart line with a bigger quantity.
+const sameExtra = (a, b) => a.id === b.id && a.option === b.option && JSON.stringify(a.picks || {}) === JSON.stringify(b.picks || {});
 
 // Works for both bowls and extras
 const itemPrice = x => (isExtra(x) ? extraUnitPrice(x) : bowlUnitPrice(x)) * x.quantity;
@@ -194,10 +252,10 @@ function pick(type, name, item) {
 }
 
 function renderBuilder() {
+  // One grid per bowl group; only the current sidebar category's grid is shown
   const sizeGroups = [...new Set(MENU.sizes.map(s => s.group))];
   $("#opt-size").innerHTML = sizeGroups.map(g => `
-    <h4>${esc(g)}</h4>
-    <div class="pick-grid" role="radiogroup" aria-label="${esc(g)}">${MENU.sizes.filter(s => s.group === g).map(s =>
+    <div class="pick-grid" data-size-group="${esc(g)}" role="radiogroup" aria-label="${esc(g)}">${MENU.sizes.filter(s => s.group === g).map(s =>
       `<label class="pick pick-card"><input type="radio" name="size" value="${s.id}"><span><strong>${esc(s.name)}${badges(s)}</strong><small>${esc(s.detail)}</small><em>${fmt(s.price)}</em></span></label>`
     ).join("")}</div>`).join("");
   $("#opt-base").innerHTML = MENU.bases.map(b => pick("radio", "base", b)).join("");
@@ -216,12 +274,13 @@ function renderBuilder() {
       </span>`).join("")}
     </div>`).join("");
 
-  // One Raw / Seared / Cooked row per cookable fish, shown once it's in the bowl
-  $("#opt-prep").innerHTML = MENU.proteins.filter(p => p.cookable).map(p => `
+  // One prep row (Raw / Seared / Cooked, or As is / Warmed up) per protein that has
+  // choices, shown once it's in the bowl
+  $("#opt-prep").innerHTML = MENU.proteins.filter(p => p.prep).map(p => `
     <div class="prep-row" data-prep-row="${p.id}" hidden>
       <span class="prep-name">${esc(p.name)}</span>
-      <div class="pick-row" role="radiogroup" aria-label="How to prepare ${esc(p.name)}">${MENU.proteinPrep.map(h =>
-        `<label class="pick"><input type="radio" name="prep-${p.id}" value="${h.id}"><span>${esc(h.name)}</span></label>`
+      <div class="pick-row" role="radiogroup" aria-label="How to prepare ${esc(p.name)}">${p.prep.map(id =>
+        `<label class="pick"><input type="radio" name="prep-${p.id}" value="${id}"><span>${esc(PROTEIN_PREP[id].name)}</span></label>`
       ).join("")}</div>
     </div>`).join("");
 
@@ -231,31 +290,38 @@ function renderBuilder() {
   decorateBadges($("#builder"));
 }
 
-function renderExtras() {
-  const items = MENU.extras.filter(orderable);
-  $("#extras").hidden = items.length === 0;
-  const groups = [...new Set(items.map(x => x.group))];
-  $("#opt-extras").innerHTML = groups.map(g => `
-    <h4>${esc(g)}</h4>
-    <ul class="extra-list">${items.filter(x => x.group === g).map(x => {
-      const options = (x.options || []).filter(o => Number.isInteger(o.price));
-      const price = options.length ? options.map(o => fmt(o.price)).join(" / ") : fmt(x.price);
-      return `
-      <li class="extra-row" data-extra="${x.id}">
-        <div class="extra-info">
-          <strong>${esc(x.name)}</strong>${badges(x)}
-          ${x.detail ? `<small>${esc(x.detail)}</small>` : ""}
-          <span class="price">${price}</span>
-        </div>
-        <div class="extra-controls">
-          ${options.length ? `<select data-option aria-label="${esc(x.name)} size">${options.map(o =>
-            `<option value="${esc(o.id)}">${esc(o.name)} · ${fmt(o.price)}</option>`).join("")}</select>` : ""}
-          ${x.choiceOf === "sauces" ? `<select data-choice aria-label="Which sauce"><option value="">Which sauce?</option>${MENU.sauces.map(s =>
-            `<option value="${s.id}">${esc(s.name)}</option>`).join("")}</select>` : ""}
-          <button type="button" class="btn btn-ghost btn-sm" data-add-extra="${x.id}">Add</button>
-        </div>
-      </li>`;
-    }).join("")}</ul>`).join("");
+// Lists one sidebar category's extras, each with its sizes, add-ons, and Add button
+function renderExtras(cat) {
+  const items = MENU.extras.filter(x => x.group === cat.extras && orderable(x));
+  $("#extras-title").textContent = cat.name;
+  $("#extras-note").textContent = items.length
+    ? "Tap Add for each one you'd like. Change quantities in your order."
+    : "Not available for online ordering yet. Grab one at the counter when you pick up!";
+  $("#opt-extras").innerHTML = items.map(x => {
+    const options = (x.options || []).filter(o => Number.isInteger(o.price));
+    const price = options.length ? options.map(o => fmt(o.price)).join(" / ") : fmt(x.price);
+    const choices = (x.choices || []).map(group => `
+      <div class="choice-group" role="group" aria-label="${esc(x.name)} ${esc(group.name)}">
+        <span class="choice-label">${esc(group.name)}${group.required ? "" : " <small>(optional)</small>"}</span>
+        ${choiceItems(group).map(c =>
+          `<label class="pick"><input type="${group.single ? "radio" : "checkbox"}" name="pick-${x.id}-${group.id}" data-group="${group.id}" value="${c.id}"><span>${esc(c.name)}${badges(c)}</span></label>`
+        ).join("")}
+      </div>`).join("");
+    return `
+    <li class="extra-row" data-extra="${x.id}">
+      <div class="extra-info">
+        <strong>${esc(x.name)}</strong>${badges(x)}
+        ${x.detail ? `<small>${esc(x.detail)}</small>` : ""}
+        <span class="price">${price}</span>
+      </div>
+      <div class="extra-controls">
+        ${options.length ? `<select data-option aria-label="${esc(x.name)} size">${options.map(o =>
+          `<option value="${esc(o.id)}">${esc(o.name)} · ${fmt(o.price)}</option>`).join("")}</select>` : ""}
+        <button type="button" class="btn btn-primary btn-sm" data-add-extra="${x.id}">Add</button>
+      </div>
+      ${choices ? `<div class="extra-choices">${choices}</div>` : ""}
+    </li>`;
+  }).join("");
   decorateBadges($("#extras"));
 }
 
@@ -264,28 +330,37 @@ function wireExtras() {
     const btn = e.target.closest("[data-add-extra]");
     if (!btn) return;
     const row = btn.closest(".extra-row");
-    const choiceSelect = row.querySelector("[data-choice]");
+    const item = EXTRAS[btn.dataset.addExtra];
+
+    // Picked add-ons, in menu order so identical picks match
+    const picks = {};
+    for (const group of item.choices || []) {
+      const chosen = [...row.querySelectorAll(`input[data-group="${group.id}"]:checked`)].map(i => i.value);
+      if (chosen.length) picks[group.id] = chosen;
+    }
     const extra = {
       kind: "extra",
-      id: btn.dataset.addExtra,
+      id: item.id,
       option: row.querySelector("[data-option]")?.value || null,
-      choice: choiceSelect?.value || null,
+      picks,
       quantity: 1,
     };
-    if (choiceSelect && !extra.choice) {
-      choiceSelect.focus();
-      return flashButton(btn, "Pick a sauce");
+    if (extraProblem(extra)) {
+      const missing = (item.choices || []).find(g => g.required && !picks[g.id]);
+      if (missing) row.querySelector(`input[data-group="${missing.id}"]`)?.focus();
+      return flashButton(btn, missing ? `Pick a ${missing.name.toLowerCase()}` : "Unavailable");
     }
-    if (extraProblem(extra)) return flashButton(btn, "Unavailable");
 
     // Same item again just bumps the quantity
-    const same = cart.find(x => isExtra(x) && x.id === extra.id && x.option === extra.option && x.choice === extra.choice);
+    const same = cart.find(x => isExtra(x) && sameExtra(x, extra));
     if (same) {
       same.quantity = Math.min(MENU.maxBowlQuantity, same.quantity + 1);
     } else {
       if (cart.length >= MENU.maxBowlsPerOrder) return flashButton(btn, "Order full");
       cart.push(extra);
     }
+    // Clear the add-ons so the next one starts fresh
+    row.querySelectorAll(".extra-choices input").forEach(i => i.checked = false);
     cartChanged();
     flashButton(btn, "Added ✓");
   });
@@ -300,6 +375,8 @@ function flashButton(btn, text) {
 function syncBuilder() {
   const size = SIZES[bowl.size];
   const form = $("#builder");
+  form.querySelectorAll("[data-size-group]").forEach(g => g.hidden = g.dataset.sizeGroup !== size.group);
+  $("#size-title").textContent = MENU.sizes.filter(s => s.group === size.group).every(s => s.cooked) ? "Pick your bowl" : "Pick a size";
   form.querySelectorAll('input[name="size"]').forEach(i => i.checked = i.value === bowl.size);
   form.querySelectorAll('input[name="base"]').forEach(i => i.checked = i.value === bowl.base);
   form.querySelectorAll('input[name="side"]').forEach(i => i.checked = i.value === bowl.side);
@@ -340,7 +417,7 @@ function syncBuilder() {
     const id = row.dataset.prepRow;
     row.hidden = !bowl.proteins[id];
     anyPrep = anyPrep || !row.hidden;
-    const how = bowl.prep[id] || MENU.proteinPrep[0].id;
+    const how = bowl.prep[id] || PROTEINS[id].prep[0];
     row.querySelectorAll("input").forEach(i => i.checked = i.value === how);
   });
   $("#prep-picker").hidden = !anyPrep;
@@ -400,7 +477,7 @@ function wireBuilder() {
       bowl.side = value;
     } else if (name.startsWith("prep-")) {
       const id = name.slice(5);
-      if (value === MENU.proteinPrep[0].id) delete bowl.prep[id];
+      if (value === PROTEINS[id].prep[0]) delete bowl.prep[id];
       else bowl.prep[id] = value;
     } else if (name === "sauce") {
       bowl.sauces = checked ? [...bowl.sauces, value] : bowl.sauces.filter(id => id !== value);
@@ -505,7 +582,7 @@ function cartItemsHtml(items, editable) {
 function orderPayload() {
   return {
     bowls: cart.filter(x => !isExtra(x)),
-    extras: cart.filter(isExtra).map(({ id, option, choice, quantity }) => ({ id, option, choice, quantity })),
+    extras: cart.filter(isExtra).map(({ id, option, picks, quantity }) => ({ id, option, picks, quantity })),
   };
 }
 
@@ -712,15 +789,17 @@ async function init() {
   SAUCE_PLACEMENTS = byId(MENU.saucePlacements);
   PROTEIN_PREP = byId(MENU.proteinPrep);
   EXTRAS = byId(MENU.extras);
+  CATEGORIES = byId(MENU.categories);
 
   bowl = newBowl();
   cart = loadCart();
   renderBuilder();
-  renderExtras();
-  syncBuilder();
+  renderCategories();
   wireBuilder();
   wireExtras();
   wireCheckout();
+  // Open the category in the link (e.g. order.html#sides), or Poke Bowls
+  showCategory(location.hash.slice(1));
   $("#order-layout").hidden = false;
   renderCart();
   requestQuote();

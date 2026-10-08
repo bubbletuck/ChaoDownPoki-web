@@ -56,11 +56,14 @@
 
         <div class="order-layout" id="order-layout" hidden>
 
-          <div class="order-main">
+          <!-- ================= CATEGORY SIDEBAR ================= -->
+          <nav class="cat-nav" id="cat-nav" aria-label="Menu categories"></nav>
+
+          <div class="order-main" id="order-main">
           <!-- ================= BOWL BUILDER ================= -->
           <form class="builder" id="builder" novalidate>
             <div class="build-step">
-              <h3><span class="num">1</span> Pick your bowl</h3>
+              <h3><span class="num">1</span> <span id="size-title">Pick a size</span></h3>
               <div id="opt-size"></div>
             </div>
 
@@ -85,11 +88,11 @@
               <p class="step-note" id="scoop-status" aria-live="polite"></p>
               <div id="opt-protein"></div>
               <div class="half-picker" id="prep-picker" hidden>
-                <h4>How do you want your fish?</h4>
-                <p class="step-note">Raw, or we can sear or cook it for you.</p>
+                <h4>How do you want it?</h4>
+                <p class="step-note">We can sear or cook your fish, or warm up your shrimp.</p>
                 <div id="opt-prep"></div>
               </div>
-              <p class="hint">Salmon, Tuna, Yellowtail, and Scallops can be seared or cooked. Spicy Tuna and ChaoDown Mix are served raw.</p>
+              <p class="hint">ChaoDown Mix, Salmon, Tuna, Yellowtail, and Scallops can be raw, seared, or cooked. Spicy Tuna is served raw.</p>
             </div>
 
             <div class="build-step">
@@ -127,11 +130,11 @@
             </div>
           </form>
 
-          <!-- ================= SIDES, DRINKS, DESSERT ================= -->
-          <div class="build-step extras" id="extras" aria-labelledby="extras-title">
-            <h3 id="extras-title"><span class="num">+</span> Add sides &amp; more</h3>
-            <p class="step-note">Fries, egg rolls, miso soup, and more. Add as many as you like.</p>
-            <div id="opt-extras"></div>
+          <!-- ================= SIDES, DRINKS, ICE CREAM ================= -->
+          <div class="build-step extras" id="extras" aria-labelledby="extras-title" hidden>
+            <h3 id="extras-title"></h3>
+            <p class="step-note" id="extras-note"></p>
+            <ul class="extra-list" id="opt-extras"></ul>
           </div>
           </div>
 

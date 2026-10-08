@@ -5,6 +5,8 @@
 // Prices are in cents.
 // ================================================================
 
+const FISH_PREP = ["raw", "seared", "cooked"];
+
 export const MENU = {
   currency: "USD",
 
@@ -65,24 +67,27 @@ export const MENU = {
 
   proteins: [
     { id: "spicy-tuna",     name: "Spicy Tuna",     group: "Raw", raw: true, spice: 2 },
-    { id: "chaodown-mix",   name: "ChaoDown Mix",   group: "Raw", raw: true, spice: 1, detail: "tuna & salmon, spicy-sweet sauce" },
-    { id: "salmon",         name: "Salmon",         group: "Raw", raw: true, cookable: true },
-    { id: "tuna",           name: "Tuna",           group: "Raw", raw: true, cookable: true },
-    { id: "yellowtail",     name: "Yellowtail",     group: "Raw", raw: true, cookable: true },
-    { id: "scallops",       name: "Scallops",       group: "Raw", raw: true, cookable: true },
+    { id: "chaodown-mix",   name: "ChaoDown Mix",   group: "Raw", raw: true, spice: 1, detail: "tuna & salmon, spicy-sweet sauce", prep: FISH_PREP },
+    { id: "salmon",         name: "Salmon",         group: "Raw", raw: true, prep: FISH_PREP },
+    { id: "tuna",           name: "Tuna",           group: "Raw", raw: true, prep: FISH_PREP },
+    { id: "yellowtail",     name: "Yellowtail",     group: "Raw", raw: true, prep: FISH_PREP },
+    { id: "scallops",       name: "Scallops",       group: "Raw", raw: true, prep: FISH_PREP },
     { id: "octopus-salad",  name: "Octopus Salad",  group: "Cooked" },
-    { id: "shrimp",         name: "Shrimp",         group: "Cooked" },
+    { id: "shrimp",         name: "Shrimp",         group: "Cooked", prep: ["as-is", "warmed"] },
     { id: "tofu",           name: "Tofu",           group: "Cooked" },
     { id: "tempura-shrimp", name: "Tempura Shrimp", group: "Cooked" },
     { id: "chicken",        name: "Chicken",        group: "Cooked" },
     { id: "crab-salad",     name: "Crab Salad",     group: "Cooked" },
   ],
 
-  // How customers can have a cookable (raw) fish prepared. The first is the default.
+  // Ways a protein can be prepared. Each protein's `prep` lists the ones it
+  // allows; the first in its list is the default and isn't printed on tickets.
   proteinPrep: [
     { id: "raw",    name: "Raw" },
     { id: "seared", name: "Seared" },
     { id: "cooked", name: "Cooked" },
+    { id: "as-is",  name: "As is" },
+    { id: "warmed", name: "Warmed up" },
   ],
 
   // Where the sauce goes. Customers pick any combination.
@@ -135,13 +140,20 @@ export const MENU = {
     { id: "sesame-seeds",   name: "Sesame Seeds" },
   ],
 
-  // Sides, soup, drinks, and dessert ordered on their own.
-  //   options:  sizes to pick from, each with its own price
-  //   choiceOf: "sauces" means the customer picks which sauce
+  // Sides, soup, drinks, and ice cream ordered on their own.
+  //   options: sizes to pick from, each with its own price
+  //   choices: free add-ons the customer can pick. Each group lists its
+  //            `items`, or uses `from: "sauces"` for the whole sauce list.
+  //            `single` allows one pick, `required` needs at least one.
   //   price: null hides the item from online ordering until a price is set
   extras: [
-    { id: "chaodown-fries", group: "Sides", name: "Chaodown Fries", price: 569 },
-    { id: "miso-soup",      group: "Sides", name: "Miso Soup", price: 400 },
+    { id: "chaodown-fries", group: "Sides", name: "Chaodown Fries", price: 569, choices: [
+      { id: "sauces", name: "Sauces", from: "sauces" },
+      { id: "toppings", name: "Toppings", items: [{ id: "green-onions", name: "Green Onions" }] },
+    ] },
+    { id: "miso-soup",      group: "Sides", name: "Miso Soup", price: 400, choices: [
+      { id: "add", name: "Add", items: [{ id: "seaweed", name: "Seaweed" }, { id: "green-onions", name: "Green Onions" }] },
+    ] },
     { id: "egg-roll",       group: "Sides", name: "Egg Roll", options: [
       { id: "2", name: "2 pcs", price: 499 }, { id: "4", name: "4 pcs", price: 899 } ] },
     { id: "cheese-wonton",  group: "Sides", name: "Cheese Wonton", options: [
@@ -149,8 +161,12 @@ export const MENU = {
     { id: "pot-sticker",    group: "Sides", name: "Pot Sticker", options: [
       { id: "2", name: "2 pcs", price: 499 }, { id: "4", name: "4 pcs", price: 799 } ] },
     { id: "fried-wontons",  group: "Sides", name: "Deep Fried Wontons", price: 499 },
-    { id: "tempura-shrimp", group: "Sides", name: "Tempura Shrimp", detail: "4 pcs", price: 900 },
-    { id: "side-sauce",     group: "Sides", name: "Side of Sauce", detail: "8 oz", price: 500, choiceOf: "sauces" },
+    { id: "tempura-shrimp", group: "Sides", name: "Tempura Shrimp", detail: "4 pcs", price: 900, choices: [
+      { id: "sauces", name: "Sauces", from: "sauces" },
+    ] },
+    { id: "side-sauce",     group: "Sides", name: "Side of Sauce", detail: "8 oz", price: 500, choices: [
+      { id: "sauce", name: "Sauce", from: "sauces", single: true, required: true },
+    ] },
     { id: "side-edamame",   group: "Sides", name: "Side of Edamame", detail: "8 oz", price: 500 },
     { id: "side-seaweed",   group: "Sides", name: "Side of Seaweed", detail: "8 oz", price: 500 },
     { id: "side-crab",      group: "Sides", name: "Side of Crab Salad", detail: "8 oz", price: 500 },
@@ -159,8 +175,18 @@ export const MENU = {
     // TODO: add prices to put these on the order page
     { id: "fountain-drink", group: "Drinks", name: "Fountain Drink", price: null },
     { id: "bottled-drink",  group: "Drinks", name: "Bottled Drink", detail: "pick from our cooler at pickup", price: null },
-    { id: "fish-ice-cream", group: "Dessert", name: "Fish Ice Cream", price: null },
-    { id: "mochi-ice-cream", group: "Dessert", name: "Mochi Ice Cream", price: null },
+    { id: "fish-ice-cream", group: "Ice Cream", name: "Fish Ice Cream", price: null },
+    { id: "mochi-ice-cream", group: "Ice Cream", name: "Mochi Ice Cream", price: null },
+  ],
+
+  // The order page's sidebar. Bowl categories show the bowl builder with
+  // that group of sizes; the others list extras from that group.
+  categories: [
+    { id: "poke",      name: "Poke Bowls",         blurb: "Build your own",          bowls: "Poke bowls" },
+    { id: "teriyaki",  name: "Teriyaki & Chicken", blurb: "Comes with a side",       bowls: "Teriyaki & chicken bowls" },
+    { id: "sides",     name: "Sides & Soup",       blurb: "Fries, egg rolls, miso",  extras: "Sides" },
+    { id: "drinks",    name: "Drinks",             blurb: "Fountain & bottled",      extras: "Drinks" },
+    { id: "ice-cream", name: "Ice Cream",          blurb: "Fish & mochi",            extras: "Ice Cream" },
   ],
 };
 
@@ -204,6 +230,9 @@ export function orderingStatus(now = new Date()) {
   }
   return { open: true, message: `Taking online orders until ${label(lastOrder)} today.` };
 }
+
+// The options in one of an extra's choice groups
+export const choiceItems = group => group.from === "sauces" ? MENU.sauces : group.items;
 
 const money = amount => ({ amount, currency: MENU.currency });
 const modifier = (name, amount = 0) => ({ name, base_price_money: money(amount) });
@@ -255,10 +284,10 @@ export function bowlToLineItem(bowl) {
   const extraScoops = scoops - included;
   if (extraScoops > MENU.maxExtraScoops) return { error: `Up to ${MENU.maxExtraScoops} extra scoops per bowl` };
 
-  // Prep for cookable fish: { proteinId: "seared" | "cooked" }. Raw is the default.
+  // How a protein is prepared: { proteinId: "seared" }, from that protein's `prep` list
   const prep = bowl.prep && typeof bowl.prep === "object" ? bowl.prep : {};
   for (const [id, how] of Object.entries(prep)) {
-    if (!bowl.proteins?.[id] || !PROTEINS[id].cookable || !PROTEIN_PREP[how]) return { error: "Invalid protein prep" };
+    if (!bowl.proteins?.[id] || !PROTEINS[id].prep?.includes(how)) return { error: "Invalid protein prep" };
   }
 
   const sauces = Array.isArray(bowl.sauces) ? bowl.sauces : [];
@@ -275,7 +304,7 @@ export function bowlToLineItem(bowl) {
   const modifiers = [modifier(`Base: ${baseName}`)];
   if (side) modifiers.push(modifier(`Side: ${side.name}`));
   for (const [id, count] of proteinEntries) {
-    const how = prep[id] && prep[id] !== MENU.proteinPrep[0].id ? ` (${PROTEIN_PREP[prep[id]].name})` : "";
+    const how = prep[id] && prep[id] !== PROTEINS[id].prep[0] ? ` (${PROTEIN_PREP[prep[id]].name})` : "";
     modifiers.push(modifier(`${size.cooked ? "Add protein" : "Protein"}: ${PROTEINS[id].name}${count > 1 ? ` ×${count}` : ""}${how}`));
   }
   if (extraScoops > 0) {
@@ -304,7 +333,7 @@ export function bowlToLineItem(bowl) {
 }
 
 // Turns one side / drink / dessert into a Square line item, priced from MENU.
-// An extra looks like { id: "egg-roll", option: "4", choice: null, quantity: 2 }.
+// An extra looks like { id: "chaodown-fries", option: null, picks: { sauces: ["ponzu"] }, quantity: 2 }.
 // Returns { lineItem } or { error }.
 export function extraToLineItem(extra) {
   const item = EXTRAS[extra?.id];
@@ -327,12 +356,18 @@ export function extraToLineItem(extra) {
   }
   if (!Number.isInteger(price)) return { error: `${item.name} isn't available online yet` };
 
+  // Free add-ons: { groupId: [itemId, ...] }
+  const picks = extra.picks && typeof extra.picks === "object" ? extra.picks : {};
+  const groups = item.choices || [];
+  if (Object.keys(picks).some(g => !groups.some(c => c.id === g))) return { error: "Invalid choice" };
   const modifiers = [];
-  if (item.choiceOf === "sauces") {
-    if (!SAUCES[extra.choice]) return { error: `Choose which sauce for ${item.name}` };
-    modifiers.push(modifier(SAUCES[extra.choice].name));
-  } else if (extra.choice) {
-    return { error: "Invalid choice" };
+  for (const group of groups) {
+    const chosen = picks[group.id] || [];
+    const options = byId(choiceItems(group));
+    if (!Array.isArray(chosen) || new Set(chosen).size !== chosen.length || chosen.some(id => !options[id])) return { error: "Invalid choice" };
+    if (group.single && chosen.length > 1) return { error: `Pick one ${group.name.toLowerCase()} for ${item.name}` };
+    if (group.required && !chosen.length) return { error: `Choose a ${group.name.toLowerCase()} for ${item.name}` };
+    for (const id of chosen) modifiers.push(modifier(`${group.name}: ${options[id].name}`));
   }
 
   const lineItem = {
