@@ -59,8 +59,8 @@
           <!-- ================= BOWL BUILDER ================= -->
           <form class="builder" id="builder" novalidate>
             <div class="build-step">
-              <h3><span class="num">1</span> Pick a size</h3>
-              <div class="pick-grid" id="opt-size" role="radiogroup" aria-label="Bowl size"></div>
+              <h3><span class="num">1</span> Pick your bowl</h3>
+              <div id="opt-size"></div>
             </div>
 
             <div class="build-step">
@@ -68,7 +68,13 @@
               <div class="pick-row" id="opt-base" role="radiogroup" aria-label="Base"></div>
             </div>
 
-            <div class="build-step">
+            <div class="build-step" id="step-side" hidden>
+              <h3><span class="num">3</span> Choose your side</h3>
+              <p class="step-note">Your protein is included. Pick the side that comes with your bowl.</p>
+              <div class="pick-row" id="opt-side" role="radiogroup" aria-label="Side"></div>
+            </div>
+
+            <div class="build-step" id="step-protein">
               <h3><span class="num">3</span> Pick your protein</h3>
               <p class="step-note" id="scoop-status" aria-live="polite"></p>
               <div id="opt-protein"></div>
@@ -77,7 +83,7 @@
 
             <div class="build-step">
               <h3><span class="num">4</span> Mix a sauce in</h3>
-              <p class="step-note" id="sauce-status" aria-live="polite"></p>
+              <p class="step-note">As many as you like.</p>
               <div class="pick-row" id="opt-sauce"></div>
             </div>
 

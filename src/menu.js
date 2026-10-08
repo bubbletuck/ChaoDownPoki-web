@@ -26,16 +26,31 @@ export const MENU = {
 
   extraScoopPrice: 400,
   maxExtraScoops: 5,
-  maxSauces: 3,
   maxBowlQuantity: 20,
   maxBowlsPerOrder: 30,
 
+  // Every bowl you can order. Poke bowls pick their own protein scoops.
+  // Cooked bowls come with their protein, so customers only pick a base,
+  // sauces, toppings, and the included side.
   sizes: [
-    { id: "regular",    name: "Regular",         detail: "2 scoops",       scoops: 2, price: 1650 },
-    { id: "large",      name: "Large",           detail: "3 scoops",       scoops: 3, price: 1850 },
-    { id: "xlarge",     name: "XLarge",          detail: "5 scoops",       scoops: 5, price: 2150 },
-    { id: "vegetarian", name: "Vegetarian Bowl", detail: "3 scoops tofu",  scoops: 3, price: 1650, proteins: ["tofu"] },
-    { id: "kids",       name: "Kids Bowl",       detail: "1 scoop",        scoops: 1, price: 1100 },
+    { id: "regular",    group: "Poke bowls", name: "Regular",         detail: "2 scoops",      scoops: 2, price: 1650 },
+    { id: "large",      group: "Poke bowls", name: "Large",           detail: "3 scoops",      scoops: 3, price: 1850 },
+    { id: "xlarge",     group: "Poke bowls", name: "XLarge",          detail: "5 scoops",      scoops: 5, price: 2150 },
+    { id: "vegetarian", group: "Poke bowls", name: "Vegetarian Bowl", detail: "3 scoops tofu", scoops: 3, price: 1650, proteins: ["tofu"] },
+    { id: "kids",       group: "Poke bowls", name: "Kids Bowl",       detail: "1 scoop",       scoops: 1, price: 1100 },
+
+    { id: "teriyaki-chicken",      group: "Teriyaki & chicken bowls", cooked: true, name: "Teriyaki Chicken",     detail: "Comes with a side", price: 1650 },
+    { id: "teriyaki-chicken-kids", group: "Teriyaki & chicken bowls", cooked: true, name: "Teriyaki Chicken",     detail: "Kids size", kids: true, price: 1100 },
+    { id: "teriyaki-salmon",       group: "Teriyaki & chicken bowls", cooked: true, name: "Teriyaki Salmon",      detail: "Comes with a side", price: 1750 },
+    { id: "korean-spicy-chicken",  group: "Teriyaki & chicken bowls", cooked: true, name: "Korean Spicy Chicken", detail: "Comes with a side", spice: 2, price: 1650 },
+    { id: "chao-chicken",          group: "Teriyaki & chicken bowls", cooked: true, name: "Chao Chicken",         detail: "Comes with a side", price: 1650 },
+  ],
+
+  // The side included with every cooked bowl
+  bowlSides: [
+    { id: "egg-roll",      name: "Egg Roll" },
+    { id: "cheese-wonton", name: "Cheese Wonton" },
+    { id: "pot-sticker",   name: "Pot Sticker" },
   ],
 
   bases: [
@@ -110,6 +125,7 @@ const BASES = byId(MENU.bases);
 const PROTEINS = byId(MENU.proteins);
 const SAUCES = byId(MENU.sauces);
 const TOPPINGS = byId(MENU.toppings);
+const BOWL_SIDES = byId(MENU.bowlSides);
 
 // Is online ordering open right now? Returns { open, message }.
 // order.js has a copy of this so the page can show the same message.
@@ -159,8 +175,15 @@ export function bowlToLineItem(bowl) {
     return { error: "Invalid quantity" };
   }
 
-  // Proteins: { proteinId: scoops }
+  // Proteins: { proteinId: scoops }. Cooked bowls come with theirs.
   const proteinEntries = Object.entries(bowl.proteins || {});
+  if (size.cooked && proteinEntries.length) return { error: `${size.name} comes with its protein` };
+
+  // The included side, only on cooked bowls
+  const side = size.cooked ? BOWL_SIDES[bowl.side] : null;
+  if (size.cooked && !side) return { error: "Choose your side" };
+  if (!size.cooked && bowl.side) return { error: "Poke bowls don't come with a side" };
+
   let scoops = 0;
   for (const [id, count] of proteinEntries) {
     if (!PROTEINS[id]) return { error: "Unknown protein" };
@@ -168,18 +191,19 @@ export function bowlToLineItem(bowl) {
     if (!Number.isInteger(count) || count < 1) return { error: "Invalid protein scoops" };
     scoops += count;
   }
-  if (scoops < size.scoops) return { error: `Pick ${size.scoops} scoop${size.scoops > 1 ? "s" : ""} of protein` };
-  const extraScoops = scoops - size.scoops;
+  const included = size.scoops || 0;
+  if (scoops < included) return { error: `Pick ${included} scoop${included > 1 ? "s" : ""} of protein` };
+  const extraScoops = scoops - included;
   if (extraScoops > MENU.maxExtraScoops) return { error: `Up to ${MENU.maxExtraScoops} extra scoops per bowl` };
 
   const sauces = Array.isArray(bowl.sauces) ? bowl.sauces : [];
   if (new Set(sauces).size !== sauces.length || sauces.some(id => !SAUCES[id])) return { error: "Invalid sauce" };
-  if (sauces.length > MENU.maxSauces) return { error: `Up to ${MENU.maxSauces} sauces per bowl` };
 
   const toppings = Array.isArray(bowl.toppings) ? bowl.toppings : [];
   if (new Set(toppings).size !== toppings.length || toppings.some(id => !TOPPINGS[id])) return { error: "Invalid topping" };
 
   const modifiers = [modifier(`Base: ${base.name}`)];
+  if (side) modifiers.push(modifier(`Side: ${side.name}`));
   for (const [id, count] of proteinEntries) {
     modifiers.push(modifier(`Protein: ${PROTEINS[id].name}${count > 1 ? ` ×${count}` : ""}`));
   }
@@ -189,13 +213,18 @@ export function bowlToLineItem(bowl) {
   for (const id of sauces) modifiers.push(modifier(`Sauce: ${SAUCES[id].name}`));
   for (const id of toppings) modifiers.push(modifier(TOPPINGS[id].name, TOPPINGS[id].price || 0));
 
-  const lineItem = {
+  const lineItem = size.cooked ? {
+    name: `${size.name} Bowl`,
+    variation_name: size.kids ? "Kids" : "Regular",
+  } : {
     name: size.id === "vegetarian" || size.id === "kids" ? size.name : "Poke Bowl",
     variation_name: `${size.name} (${size.detail})`,
+  };
+  Object.assign(lineItem, {
     quantity: String(quantity),
     base_price_money: money(size.price),
     modifiers,
-  };
+  });
   if (typeof bowl.note === "string" && bowl.note.trim()) {
     lineItem.note = bowl.note.trim().slice(0, 200);
   }

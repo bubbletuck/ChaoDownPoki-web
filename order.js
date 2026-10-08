@@ -17,7 +17,7 @@ const esc = s => String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;"
 const fmt = cents => "$" + (cents / 100).toFixed(2);
 const byId = list => Object.fromEntries(list.map(x => [x.id, x]));
 
-let MENU, SIZES, BASES, PROTEINS, SAUCES, TOPPINGS;
+let MENU, SIZES, BASES, PROTEINS, SAUCES, TOPPINGS, BOWL_SIDES;
 let bowl;              // the bowl being built
 let cart = [];         // bowls added to the order
 let quote = null;      // exact totals from Square for the current cart
@@ -70,16 +70,19 @@ function checkHours() {
 // ---------- Bowl helpers ----------
 
 function newBowl(size = "regular") {
-  return { size, base: null, proteins: {}, sauces: [], toppings: [], note: "", quantity: 1 };
+  return { size, base: null, side: null, proteins: {}, sauces: [], toppings: [], note: "", quantity: 1 };
 }
 
 function scoopCount(b) {
   return Object.values(b.proteins).reduce((a, n) => a + n, 0);
 }
 
+// Scoops included in the price (cooked bowls come with their protein)
+const includedScoops = size => size.scoops || 0;
+
 function bowlUnitPrice(b) {
   const size = SIZES[b.size];
-  const extra = Math.max(0, scoopCount(b) - size.scoops);
+  const extra = Math.max(0, scoopCount(b) - includedScoops(size));
   const toppings = b.toppings.reduce((a, id) => a + (TOPPINGS[id]?.price || 0), 0);
   return size.price + extra * MENU.extraScoopPrice + toppings;
 }
@@ -92,23 +95,32 @@ function bowlProblem(b) {
   if (!size) return "Pick a bowl size.";
   if (!BASES[b.base]) return "Choose a base.";
   const ids = Object.keys(b.proteins);
+  if (size.cooked) {
+    if (!BOWL_SIDES[b.side]) return "Choose your side.";
+    if (ids.length) return "Pick your bowl again.";
+  } else if (b.side) {
+    return "Pick your bowl again.";
+  }
   if (ids.some(id => !PROTEINS[id] || (size.proteins && !size.proteins.includes(id)))) return "Pick your protein again.";
   const scoops = scoopCount(b);
-  if (scoops < size.scoops) return `Pick ${size.scoops - scoops} more scoop${size.scoops - scoops > 1 ? "s" : ""} of protein.`;
-  if (scoops - size.scoops > MENU.maxExtraScoops) return `Up to ${MENU.maxExtraScoops} extra scoops per bowl.`;
-  if (b.sauces.length > MENU.maxSauces || b.sauces.some(id => !SAUCES[id])) return "Pick your sauces again.";
+  const included = includedScoops(size);
+  if (scoops < included) return `Pick ${included - scoops} more scoop${included - scoops > 1 ? "s" : ""} of protein.`;
+  if (scoops - included > MENU.maxExtraScoops) return `Up to ${MENU.maxExtraScoops} extra scoops per bowl.`;
+  if (b.sauces.some(id => !SAUCES[id])) return "Pick your sauces again.";
   if (b.toppings.some(id => !TOPPINGS[id])) return "Pick your toppings again.";
   return null;
 }
 
 function bowlTitle(b) {
   const size = SIZES[b.size];
+  if (size.cooked) return `${size.name} Bowl${size.kids ? " (Kids)" : ""}`;
   return size.id === "vegetarian" || size.id === "kids" ? size.name : `${size.name} Poke Bowl`;
 }
 
 function bowlDetail(b) {
   const parts = [
     BASES[b.base].name,
+    b.side ? `with ${BOWL_SIDES[b.side].name}` : "",
     Object.entries(b.proteins).map(([id, n]) => PROTEINS[id].name + (n > 1 ? ` ×${n}` : "")).join(", "),
     b.sauces.map(id => SAUCES[id].name).join(", "),
     b.toppings.map(id => TOPPINGS[id].name).join(", "),
@@ -129,10 +141,14 @@ function pick(type, name, item) {
 }
 
 function renderBuilder() {
-  $("#opt-size").innerHTML = MENU.sizes.map(s =>
-    `<label class="pick pick-card"><input type="radio" name="size" value="${s.id}"><span><strong>${esc(s.name)}</strong><small>${esc(s.detail)}</small><em>${fmt(s.price)}</em></span></label>`
-  ).join("");
+  const sizeGroups = [...new Set(MENU.sizes.map(s => s.group))];
+  $("#opt-size").innerHTML = sizeGroups.map(g => `
+    <h4>${esc(g)}</h4>
+    <div class="pick-grid" role="radiogroup" aria-label="${esc(g)}">${MENU.sizes.filter(s => s.group === g).map(s =>
+      `<label class="pick pick-card"><input type="radio" name="size" value="${s.id}"><span><strong>${esc(s.name)}${badges(s)}</strong><small>${esc(s.detail)}</small><em>${fmt(s.price)}</em></span></label>`
+    ).join("")}</div>`).join("");
   $("#opt-base").innerHTML = MENU.bases.map(b => pick("radio", "base", b)).join("");
+  $("#opt-side").innerHTML = MENU.bowlSides.map(s => pick("radio", "side", s)).join("");
 
   const groups = [...new Set(MENU.proteins.map(p => p.group))];
   $("#opt-protein").innerHTML = groups.map(g => `
@@ -156,11 +172,16 @@ function syncBuilder() {
   const form = $("#builder");
   form.querySelectorAll('input[name="size"]').forEach(i => i.checked = i.value === bowl.size);
   form.querySelectorAll('input[name="base"]').forEach(i => i.checked = i.value === bowl.base);
+  form.querySelectorAll('input[name="side"]').forEach(i => i.checked = i.value === bowl.side);
   form.querySelectorAll('input[name="sauce"]').forEach(i => i.checked = bowl.sauces.includes(i.value));
   form.querySelectorAll('input[name="topping"]').forEach(i => i.checked = bowl.toppings.includes(i.value));
 
+  // Cooked bowls swap the protein step for the included side
+  $("#step-side").hidden = !size.cooked;
+  $("#step-protein").hidden = !!size.cooked;
+
   const scoops = scoopCount(bowl);
-  const extra = Math.max(0, scoops - size.scoops);
+  const extra = Math.max(0, scoops - includedScoops(size));
   form.querySelectorAll(".counter-chip").forEach(chip => {
     const id = chip.dataset.protein;
     const n = bowl.proteins[id] || 0;
@@ -181,7 +202,6 @@ function syncBuilder() {
   }
   status.classList.toggle("done", scoops >= size.scoops);
 
-  $("#sauce-status").textContent = `Pick up to ${MENU.maxSauces}.` + (bowl.sauces.length ? ` ${bowl.sauces.length} chosen.` : "");
   $("#qty-value").textContent = bowl.quantity;
   $("#qty-minus").disabled = bowl.quantity <= 1;
   $("#qty-plus").disabled = bowl.quantity >= MENU.maxBowlQuantity;
@@ -205,16 +225,18 @@ function wireBuilder() {
       const wasLocked = SIZES[bowl.size].proteins;
       const size = SIZES[value];
       bowl.size = value;
-      if (size.proteins) bowl.proteins = { [size.proteins[0]]: size.scoops };
-      else if (wasLocked) bowl.proteins = {};
+      if (size.cooked) {
+        bowl.proteins = {};
+      } else {
+        bowl.side = null;
+        if (size.proteins) bowl.proteins = { [size.proteins[0]]: size.scoops };
+        else if (wasLocked) bowl.proteins = {};
+      }
     } else if (name === "base") {
       bowl.base = value;
+    } else if (name === "side") {
+      bowl.side = value;
     } else if (name === "sauce") {
-      if (checked && bowl.sauces.length >= MENU.maxSauces) {
-        e.target.checked = false;
-        builderMessage(`You can pick up to ${MENU.maxSauces} sauces. Uncheck one to swap.`, "error");
-        return;
-      }
       bowl.sauces = checked ? [...bowl.sauces, value] : bowl.sauces.filter(id => id !== value);
     } else if (name === "topping") {
       bowl.toppings = checked ? [...bowl.toppings, value] : bowl.toppings.filter(id => id !== value);
@@ -475,6 +497,7 @@ async function init() {
   PROTEINS = byId(MENU.proteins);
   SAUCES = byId(MENU.sauces);
   TOPPINGS = byId(MENU.toppings);
+  BOWL_SIDES = byId(MENU.bowlSides);
 
   bowl = newBowl();
   cart = loadCart();
