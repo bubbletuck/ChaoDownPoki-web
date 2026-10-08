@@ -59,6 +59,7 @@ export const MENU = {
     { id: "vegetarian-2", group: "Poke bowls", name: "Vegetarian Bowl", detail: "2 scoops tofu", scoops: 2, price: 1450, proteins: ["tofu"] },
     { id: "vegetarian", group: "Poke bowls", name: "Vegetarian Bowl", detail: "3 scoops tofu", scoops: 3, price: 1650, proteins: ["tofu"] },
     { id: "kids",       group: "Poke bowls", name: "Kids Bowl",       detail: "1 scoop",       scoops: 1, price: 1100, maxToppings: 4 },
+    { id: "vegetarian-kids", group: "Poke bowls", name: "Kids Vegetarian Bowl", detail: "1 scoop tofu", scoops: 1, price: 1000, proteins: ["tofu"], maxToppings: 4 },
 
     { id: "teriyaki-chicken",      group: "Teriyaki & chicken bowls", cooked: true, name: "Teriyaki Chicken",     detail: "Comes with a side", price: 1650 },
     { id: "teriyaki-chicken-kids", group: "Teriyaki & chicken bowls", cooked: true, name: "Teriyaki Chicken",     detail: "Kids size", kids: true, price: 1100, maxToppings: 4 },

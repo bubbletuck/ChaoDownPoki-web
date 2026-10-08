@@ -523,7 +523,7 @@ function syncBuilder() {
     status.textContent = `Your ${size.name.toLowerCase()} is already included. Want more? Add any protein for an extra ${fmt(MENU.extraScoopPrice)} per scoop.` +
       (scoops ? ` You've added ${scoops} (+${fmt(extra * MENU.extraScoopPrice)}).` : "");
   } else if (size.proteins) {
-    status.textContent = `${size.name} comes with ${size.scoops} scoops of ${size.proteins.map(id => PROTEINS[id].name).join(", ")}. Extra scoops are ${fmt(MENU.extraScoopPrice)} each.`;
+    status.textContent = `${size.name} comes with ${size.scoops} scoop${size.scoops > 1 ? "s" : ""} of ${size.proteins.map(id => PROTEINS[id].name).join(", ")}. Extra scoops are ${fmt(MENU.extraScoopPrice)} each.`;
   } else if (scoops < size.scoops) {
     status.textContent = `${scoops} of ${size.scoops} scoops chosen. Tap a protein to add a scoop. Pick one twice for a double scoop.`;
   } else {
