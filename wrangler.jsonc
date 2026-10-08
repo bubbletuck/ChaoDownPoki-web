@@ -15,7 +15,7 @@
     "SQUARE_LOCATION_ID": "LYNQCZPJY9BPS",
     // Cloudflare Turnstile site key (public). The check turns on once this and the
     // TURNSTILE_SECRET_KEY secret are both set.
-    "TURNSTILE_SITE_KEY": ""
+    "TURNSTILE_SITE_KEY": "0x4AAAAAAFRFndYrPi2tQQ67"
   },
 
   // Order attempts allowed per IP address: 5 a minute
