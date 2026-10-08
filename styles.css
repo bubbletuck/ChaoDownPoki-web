@@ -929,6 +929,7 @@ button.btn { font: inherit; cursor: pointer; }
 .totals .grand { color: var(--ink); font-weight: 700; font-size: 1.15rem; padding-top: 8px; margin-top: 4px; border-top: 1px solid rgba(16,48,47,0.12); }
 .checkout-form { display: grid; gap: 14px; }
 #card-container { min-height: 90px; }
+.turnstile-box { min-height: 65px; max-width: 100%; overflow: hidden; }
 .pay-btn { width: 100%; justify-content: center; font-size: 1.05rem; }
 .secure-note { font-size: 0.8rem; color: var(--ink-soft); text-align: center; margin: 0; }
 

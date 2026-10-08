@@ -1,10 +1,12 @@
 // Cloudflare Worker: Square online ordering backend + static site fallback.
 //
 // GET  /api/menu          → the ordering menu and prices (src/menu.js)
-// GET  /api/status        → { busyExtra, busy, untilClose } → how busy we are (for pickup times)
+// GET  /api/status        → { busyExtra, busy, untilClose, turnstileSiteKey } → how busy we are (for pickup times)
 // POST /api/quote         → { bowls, extras }               → exact subtotal, tax and total from Square
-// POST /api/create-order  → { bowls, extras, customer, pickupNote, pickupMinutes, sourceId, expectedTotal, idempotencyKey }
-//                           (refused outside the ordering hours in src/menu.js)
+// POST /api/create-order  → { bowls, extras, customer, pickupNote, pickupMinutes, sourceId, expectedTotal,
+//                             idempotencyKey, turnstileToken }
+//                           (refused outside the ordering hours in src/menu.js, rate limited per IP,
+//                           and needs a Turnstile token once Turnstile is set up)
 //
 // A bowl looks like:
 //   { size: "regular", base: "white-rice", proteins: { salmon: 1, tuna: 1 }, prep: { salmon: "seared" },
@@ -40,13 +42,25 @@ export default {
       if (request.method !== "POST") {
         return json({ error: "Method not allowed" }, 405, { Allow: "POST" });
       }
+      const ip = request.headers.get("cf-connecting-ip") || "unknown";
+      if (url.pathname === "/api/create-order") {
+        const blocked = await rateLimited(ip, env);
+        if (blocked) return json({ error: blocked }, 429);
+      }
       let body;
       try {
         body = await request.json();
       } catch {
         return json({ error: "Invalid JSON body" }, 400);
       }
-      return url.pathname === "/api/quote" ? quote(body, env) : createOrder(body, env);
+      if (url.pathname === "/api/quote") return quote(body, env);
+      // Bot check before anything touches Square
+      if (!(await humanCheck(body.turnstileToken, ip, env))) {
+        return json({ error: "Our security check didn't go through. Please wait a moment and try again.", turnstileFailed: true }, 403);
+      }
+      const res = await createOrder(body, env);
+      if (res.headers.get("X-Payment-Failed")) failedPayment(ip);
+      return res;
     }
 
     return env.ASSETS.fetch(request);
@@ -174,7 +188,7 @@ async function createOrder(body, env) {
     autocomplete: true,
   });
   if (!paymentRes.ok) {
-    return json({ error: paymentMessage(paymentRes.errors), details: paymentRes.errors }, paymentRes.status);
+    return json({ error: paymentMessage(paymentRes.errors), details: paymentRes.errors }, paymentRes.status, { "X-Payment-Failed": "1" });
   }
   const payment = paymentRes.data.payment;
   busy.orderTimes = [...busy.orderTimes, Date.now()];  // count it right away so the next customer sees the busier kitchen
@@ -188,6 +202,66 @@ async function createOrder(body, env) {
     pickupTime,
     ...totals(created),
   });
+}
+
+// ---------- Spam and card-fraud protection ----------
+
+// Limits on order attempts from one IP address:
+//   ORDER_LIMITER (wrangler.jsonc ratelimits): a few attempts a minute, across all of Cloudflare
+//   FAILED_PAYMENTS_MAX declined cards per FAILED_PAYMENTS_MINUTES, which stops people
+//   trying stolen cards one after another. Kept in this Worker's memory, so it's a
+//   best-effort count per Cloudflare server.
+const FAILED_PAYMENTS_MAX = 5;
+const FAILED_PAYMENTS_MINUTES = 15;
+const failedPayments = new Map();  // ip → [times]
+
+function recentFailures(ip) {
+  const since = Date.now() - FAILED_PAYMENTS_MINUTES * 60000;
+  const times = (failedPayments.get(ip) || []).filter(t => t > since);
+  if (times.length) failedPayments.set(ip, times); else failedPayments.delete(ip);
+  return times;
+}
+
+function failedPayment(ip) {
+  failedPayments.set(ip, [...recentFailures(ip), Date.now()]);
+}
+
+// An error message if this IP should wait, or null
+async function rateLimited(ip, env) {
+  if (recentFailures(ip).length >= FAILED_PAYMENTS_MAX) {
+    return "Too many declined cards. Please wait a few minutes, or call us at (916) 918-2936 to order.";
+  }
+  if (env.ORDER_LIMITER) {
+    try {
+      const { success } = await env.ORDER_LIMITER.limit({ key: ip });
+      if (!success) return "Too many tries in a short time. Please wait a minute and try again.";
+    } catch (err) {
+      console.log("Rate limiter unavailable:", err);  // don't block real customers
+    }
+  }
+  return null;
+}
+
+// Cloudflare Turnstile ("are you human"). On only when both keys are set:
+// TURNSTILE_SITE_KEY (wrangler.jsonc vars) and TURNSTILE_SECRET_KEY (dashboard Secret).
+const turnstileOn = env => !!(env.TURNSTILE_SITE_KEY && env.TURNSTILE_SECRET_KEY);
+
+async function humanCheck(token, ip, env) {
+  if (!turnstileOn(env)) return true;  // not set up yet
+  if (typeof token !== "string" || !token || token.length > 2048) return false;
+  const form = new FormData();
+  form.append("secret", env.TURNSTILE_SECRET_KEY);
+  form.append("response", token);
+  if (ip !== "unknown") form.append("remoteip", ip);
+  try {
+    const res = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", { method: "POST", body: form });
+    const data = await res.json();
+    if (!data.success) console.log("Turnstile failed:", data["error-codes"]);
+    return !!data.success;
+  } catch (err) {
+    console.log("Turnstile check unavailable:", err);
+    return false;
+  }
 }
 
 // ---------- Busy-kitchen pickup times ----------
@@ -235,7 +309,10 @@ function statusFor(busyExtra) {
 }
 
 async function status(env) {
-  return json(statusFor(await busyExtraNow(env)));
+  return json({
+    ...statusFor(await busyExtraNow(env)),
+    turnstileSiteKey: turnstileOn(env) ? env.TURNSTILE_SITE_KEY : null,  // public; the page shows the check when set
+  });
 }
 
 // "7:40 PM" in the shop's time zone

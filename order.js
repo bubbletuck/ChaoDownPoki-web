@@ -844,6 +844,7 @@ async function loadPickupStatus() {
     const res = await fetch("/api/status", { cache: "no-store" });
     if (!res.ok) throw new Error();
     pickupStatus = await res.json();
+    setupTurnstile();
   } catch {
     // Couldn't check how busy we are: offer the usual times; the Worker still checks
     if (!pickupStatus) pickupStatus = { busyExtra: 0, busy: false, untilClose: null };
@@ -891,6 +892,43 @@ function renderPickup() {
     notice.textContent = `We're busy right now, so pickup times are a little later than usual. Wait times might vary. Thanks for your patience!`;
   }
   notice.hidden = !(isBusy || !choices.length);
+}
+
+// ---------- Bot check (Cloudflare Turnstile) ----------
+
+// Shown above the Pay button once the Worker has a Turnstile site key.
+// Usually passes on its own without the customer clicking anything.
+let turnstileId = null;
+
+function setupTurnstile() {
+  const siteKey = pickupStatus?.turnstileSiteKey;
+  if (!siteKey || turnstileId !== null || !window.turnstile) return;
+  $("#turnstile-box").hidden = false;
+  turnstileId = window.turnstile.render("#turnstile-box", {
+    sitekey: siteKey,
+    action: "order",
+    size: "flexible",
+    "error-callback": () => checkoutError("The security check didn't load. Please refresh the page, or call us to order."),
+  });
+}
+window.onTurnstileLoad = setupTurnstile;
+
+// A fresh token for each order attempt (each one works only once)
+const turnstileToken = () => turnstileId === null ? null : window.turnstile.getResponse(turnstileId) || "";
+const resetTurnstile = () => { if (turnstileId !== null) window.turnstile.reset(turnstileId); };
+
+// Square checks with the customer's bank (3D Secure) while making the card token,
+// and asks them to confirm in their bank's popup if the bank wants that.
+function verificationDetails(name, phone) {
+  const [givenName, ...rest] = name.split(/\s+/);
+  return {
+    amount: (quote.total / 100).toFixed(2),
+    currencyCode: MENU.currency,
+    intent: "CHARGE",
+    customerInitiated: true,
+    sellerKeyedIn: false,
+    billingContact: { givenName, familyName: rest.join(" "), phone: phone.replace(/\D/g, "").slice(-10), countryCode: "US" },
+  };
 }
 
 // ---------- Checkout ----------
@@ -960,11 +998,13 @@ function wireCheckout() {
     }
     if (!hours.open) return checkoutError(hours.message);
     if (!card || !quote) return;
+    const humanToken = turnstileToken();
+    if (humanToken === "") return checkoutError("One moment: we're finishing a quick security check. Please try again in a few seconds.");
 
     busy = true;
     updateTotals();
     try {
-      const result = await card.tokenize();
+      const result = await card.tokenize(verificationDetails(name, phone));
       if (result.status !== "OK") {
         throw new Error(result.errors?.[0]?.message || "Please check your card details.");
       }
@@ -983,6 +1023,7 @@ function wireCheckout() {
             sourceId: result.token,
             expectedTotal: quote.total,
             idempotencyKey: attemptKey,
+            turnstileToken: humanToken,
           }),
         });
       } catch {
@@ -1006,6 +1047,7 @@ function wireCheckout() {
       showConfirmation(data, name);
     } catch (err) {
       checkoutError(err.message);
+      resetTurnstile();  // its token is used up; get a new one for the next try
     } finally {
       busy = false;
       updateTotals();
