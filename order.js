@@ -10,6 +10,9 @@
 const SQUARE_APP_ID = "sq0idp-HGUj5EiSudlFgvdjDTO-Ig";
 const SQUARE_LOCATION_ID = "LYNQCZPJY9BPS";
 const SANDBOX = SQUARE_APP_ID.startsWith("sandbox-");
+// Turn on once chaodownpoki.com is registered for Apple Pay in the Square Developer
+// Dashboard and its file is saved here as apple-pay-domain-association.txt
+const APPLE_PAY_ON = false;
 
 const CART_KEY = "chaodown-cart";
 
@@ -25,6 +28,8 @@ let quote = null;      // exact totals from Square for the current cart
 let quoteSeq = 0;
 let quoteTimer;
 let card = null;       // Square card form
+let paymentRequest = null, googlePay = null, applePay = null;  // phone wallets
+let tipPercent = 0;
 let busy = false;
 let attemptKey = null; // reused only if a checkout request never got an answer
 let hours = { open: false, message: "" };
@@ -764,16 +769,43 @@ function renderCart() {
   renderPickup();  // bigger orders take longer, so the earliest pickup moves
 }
 
+// Same as tipAmount() in src/menu.js: tip in cents, from the subtotal before tax
+const tipAmount = (subtotal, percent) => Math.round(subtotal * percent / 100);
+const tipCents = () => quote ? tipAmount(quote.subtotal, tipPercent) : 0;
+const grandTotal = () => quote.total + tipCents();  // what the customer pays
+const dollars = cents => (cents / 100).toFixed(2);
+
 function updateTotals() {
   const subtotal = cart.reduce((a, x) => a + itemPrice(x), 0);
+  const tip = tipCents();
   $("#t-subtotal").textContent = fmt(subtotal);
   $("#t-tax").textContent = quote ? fmt(quote.tax) : "…";
-  $("#t-total").textContent = quote ? fmt(quote.total) : "…";
-  $("#bar-total").textContent = quote ? fmt(quote.total) : fmt(subtotal);
+  $("#t-tip").textContent = fmt(tip);
+  $("#t-tip").hidden = $("#t-tip-label").hidden = tip === 0;
+  $("#t-total").textContent = quote ? fmt(grandTotal()) : "…";
+  $("#bar-total").textContent = quote ? fmt(grandTotal()) : fmt(subtotal);
+  // Each tip choice shows its amount
+  document.querySelectorAll("#tip-choices input").forEach(input => {
+    const pct = Number(input.value);
+    if (pct) input.nextElementSibling.querySelector("small").textContent = fmt(tipAmount(quote ? quote.subtotal : subtotal, pct));
+  });
 
+  const ready = !busy && hours.open && quote && cart.length > 0;
   const pay = $("#pay-btn");
-  pay.disabled = busy || !hours.open || !card || !quote || cart.length === 0;
-  pay.textContent = busy ? "Placing your order…" : !hours.open ? "Online ordering is closed" : quote ? `Pay ${fmt(quote.total)}` : "Pay";
+  pay.disabled = !ready || !card;
+  pay.textContent = busy ? "Placing your order…" : !hours.open ? "Online ordering is closed" : quote ? `Pay ${fmt(grandTotal())}` : "Pay";
+
+  // Apple Pay / Google Pay show the same total
+  $("#wallets").classList.toggle("not-ready", !ready);
+  if (paymentRequest && quote) paymentRequest.update({ total: { amount: dollars(grandTotal()), label: "ChaoDown Poki" } });
+}
+
+function renderTips() {
+  $("#tip-choices").innerHTML = [0, ...MENU.tipPercents].map(pct => `
+    <label class="pick pick-card">
+      <input type="radio" name="tip" value="${pct}" ${pct === tipPercent ? "checked" : ""}>
+      <span><strong>${pct ? `${pct}%` : "No tip"}</strong><small>${pct ? "" : "&nbsp;"}</small></span>
+    </label>`).join("");
 }
 
 function cartChanged() {
@@ -922,7 +954,7 @@ const resetTurnstile = () => { if (turnstileId !== null) window.turnstile.reset(
 function verificationDetails(name, phone) {
   const [givenName, ...rest] = name.split(/\s+/);
   return {
-    amount: (quote.total / 100).toFixed(2),
+    amount: dollars(grandTotal()),  // including the tip
     currencyCode: MENU.currency,
     intent: "CHARGE",
     customerInitiated: true,
@@ -948,11 +980,40 @@ async function initCard() {
     const payments = window.Square.payments(SQUARE_APP_ID, SQUARE_LOCATION_ID);
     card = await payments.card();
     await card.attach("#card-container");
+    initWallets(payments);
   } catch (err) {
     console.error(err);
     card = null;
     checkoutError("Card payments couldn't load. Please refresh the page, or call us to order.");
   }
+  updateTotals();
+}
+
+// Google Pay (Chrome, Android) and Apple Pay (Safari on iPhone, iPad, Mac).
+// Each button only shows on devices that support it.
+async function initWallets(payments) {
+  paymentRequest = payments.paymentRequest({
+    countryCode: "US",
+    currencyCode: MENU.currency,
+    total: { amount: quote ? dollars(grandTotal()) : "1.00", label: "ChaoDown Poki" },  // kept current by updateTotals()
+  });
+  try {
+    $("#wallets").hidden = $("#google-pay-button").hidden = false;
+    googlePay = await payments.googlePay(paymentRequest);
+    await googlePay.attach("#google-pay-button", { buttonColor: "black", buttonSizeMode: "fill", buttonType: "pay" });
+  } catch {
+    googlePay = null;  // not available on this device
+    $("#google-pay-button").hidden = true;
+  }
+  if (APPLE_PAY_ON) {
+    try {
+      applePay = await payments.applePay(paymentRequest);
+      $("#apple-pay-button").hidden = false;
+    } catch {
+      applePay = null;
+    }
+  }
+  $("#wallets").hidden = !googlePay && !applePay;
   updateTotals();
 }
 
@@ -981,78 +1042,104 @@ function wireCheckout() {
     checkoutError("");
   });
 
-  $("#checkout-form").addEventListener("submit", async e => {
-    e.preventDefault();
-    if (busy) return;
-    checkoutError("");
-
-    const name = $("#c-name").value.trim();
-    const pickupNote = $("#c-notes").value.trim();
-    if (cart.length === 0) return checkoutError("Your order is empty.");
-    if (!name) { $("#c-name").focus(); return checkoutError("Please enter a name for pickup."); }
-    const phone = checkPhone(true);
-    if (!phone) { $("#c-phone").focus(); return checkoutError("Please enter a valid 10-digit phone number."); }
-    if (!pickupMinutes) {
-      $("#pickup-choices input:not(:disabled)")?.focus();
-      return checkoutError("Please choose when you'll pick up your order.");
-    }
-    if (!hours.open) return checkoutError(hours.message);
-    if (!card || !quote) return;
-    const humanToken = turnstileToken();
-    if (humanToken === "") return checkoutError("One moment: we're finishing a quick security check. Please try again in a few seconds.");
-
-    busy = true;
+  $("#tip-choices").addEventListener("change", e => {
+    tipPercent = Number(e.target.value);
     updateTotals();
-    try {
-      const result = await card.tokenize(verificationDetails(name, phone));
-      if (result.status !== "OK") {
-        throw new Error(result.errors?.[0]?.message || "Please check your card details.");
-      }
-
-      attemptKey = attemptKey || crypto.randomUUID();
-      let res;
-      try {
-        res = await fetch("/api/create-order", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            ...orderPayload(),
-            customer: { name, phone },
-            pickupNote,
-            pickupMinutes,
-            sourceId: result.token,
-            expectedTotal: quote.total,
-            idempotencyKey: attemptKey,
-            turnstileToken: humanToken,
-          }),
-        });
-      } catch {
-        // No answer: keep attemptKey so trying again can't charge twice
-        throw new Error("Connection problem. Please try again. You won't be charged twice.");
-      }
-      attemptKey = null;
-
-      const data = await res.json().catch(() => ({}));
-      if (data.closed) checkHours();
-      // The kitchen got busier while they were checking out: show the new times
-      if (data.pickupChanged) {
-        pickupStatus = { busyExtra: data.busyExtra, busy: data.busy, untilClose: data.untilClose };
-        renderPickup();
-      }
-      if (res.status === 409 && Number.isInteger(data.total)) {
-        quote = { subtotal: data.subtotal, tax: data.tax, total: data.total };
-      }
-      if (!res.ok) throw new Error(data.error || "Something went wrong. Your card was not charged.");
-
-      showConfirmation(data, name);
-    } catch (err) {
-      checkoutError(err.message);
-      resetTurnstile();  // its token is used up; get a new one for the next try
-    } finally {
-      busy = false;
-      updateTotals();
-    }
   });
+
+  $("#checkout-form").addEventListener("submit", e => {
+    e.preventDefault();
+    if (card) placeOrder(c => card.tokenize(verificationDetails(c.name, c.phone)));
+  });
+  $("#google-pay-button").addEventListener("click", () => {
+    if (googlePay) placeOrder(() => googlePay.tokenize());
+  });
+  $("#apple-pay-button").addEventListener("click", () => {
+    if (applePay) placeOrder(() => applePay.tokenize());
+  });
+}
+
+// Checks the form, gets a payment token (card, Google Pay or Apple Pay), and
+// places the order. `tokenize` runs before anything else waits, because Apple
+// Pay only opens straight from the customer's tap.
+async function placeOrder(tokenize) {
+  if (busy) return;
+  checkoutError("");
+
+  const name = $("#c-name").value.trim();
+  const pickupNote = $("#c-notes").value.trim();
+  if (cart.length === 0) return checkoutError("Your order is empty.");
+  if (!name) { $("#c-name").focus(); return checkoutError("Please enter a name for pickup."); }
+  const phone = checkPhone(true);
+  if (!phone) { $("#c-phone").focus(); return checkoutError("Please enter a valid 10-digit phone number."); }
+  if (!pickupMinutes) {
+    $("#pickup-choices input:not(:disabled)")?.focus();
+    return checkoutError("Please choose when you'll pick up your order.");
+  }
+  if (!hours.open) return checkoutError(hours.message);
+  if (!quote) return;
+  const humanToken = turnstileToken();
+  if (humanToken === "") return checkoutError("One moment: we're finishing a quick security check. Please try again in a few seconds.");
+
+  let tokenizing;
+  try {
+    tokenizing = tokenize({ name, phone });
+  } catch (err) {
+    tokenizing = Promise.reject(err);
+  }
+  busy = true;
+  updateTotals();
+  try {
+    const result = await tokenizing;
+    if (result.status === "Cancel" || result.status === "Abort") return;  // closed the Apple / Google Pay sheet
+    if (result.status !== "OK") {
+      throw new Error(result.errors?.[0]?.message || "Please check your card details.");
+    }
+
+    attemptKey = attemptKey || crypto.randomUUID();
+    let res;
+    try {
+      res = await fetch("/api/create-order", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...orderPayload(),
+          customer: { name, phone },
+          pickupNote,
+          pickupMinutes,
+          tipPercent,
+          sourceId: result.token,
+          expectedTotal: quote.total,
+          idempotencyKey: attemptKey,
+          turnstileToken: humanToken,
+        }),
+      });
+    } catch {
+      // No answer: keep attemptKey so trying again can't charge twice
+      throw new Error("Connection problem. Please try again. You won't be charged twice.");
+    }
+    attemptKey = null;
+
+    const data = await res.json().catch(() => ({}));
+    if (data.closed) checkHours();
+    // The kitchen got busier while they were checking out: show the new times
+    if (data.pickupChanged) {
+      pickupStatus = { busyExtra: data.busyExtra, busy: data.busy, untilClose: data.untilClose };
+      renderPickup();
+    }
+    if (res.status === 409 && Number.isInteger(data.total)) {
+      quote = { subtotal: data.subtotal, tax: data.tax, total: data.total };
+    }
+    if (!res.ok) throw new Error(data.error || "Something went wrong. Your card was not charged.");
+
+    showConfirmation(data, name);
+  } catch (err) {
+    checkoutError(err.message || "Payment didn't go through. Your card was not charged.");
+    resetTurnstile();  // its token is used up; get a new one for the next try
+  } finally {
+    busy = false;
+    updateTotals();
+  }
 }
 
 function showConfirmation(data, name) {
@@ -1062,7 +1149,8 @@ function showConfirmation(data, name) {
   $("#confirm-totals").innerHTML = `
     <dt>Subtotal</dt><dd>${fmt(data.subtotal)}</dd>
     <dt>Tax</dt><dd>${fmt(data.tax)}</dd>
-    <dt class="grand">Total paid</dt><dd class="grand">${fmt(data.total)}</dd>`;
+    ${data.tip ? `<dt>Tip</dt><dd>${fmt(data.tip)}</dd>` : ""}
+    <dt class="grand">Total paid</dt><dd class="grand">${fmt(data.totalPaid ?? data.total)}</dd>`;
   $("#confirm-meta").innerHTML =
     `Order ID: ${esc(data.orderId)}` +
     (data.receiptUrl ? ` · <a href="${esc(data.receiptUrl)}" target="_blank" rel="noopener" class="text-link">View receipt</a>` : "");
@@ -1107,6 +1195,7 @@ async function init() {
   renderCategories();
   wireBuilder();
   wireExtras();
+  renderTips();
   wireCheckout();
   // Open the category in the link (e.g. order.html#sides), or Poke Bowls
   showCategory(location.hash.slice(1));

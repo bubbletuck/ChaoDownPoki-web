@@ -152,6 +152,7 @@
             <dl class="totals" id="totals" hidden>
               <dt>Subtotal</dt><dd id="t-subtotal"></dd>
               <dt>Tax</dt><dd id="t-tax"></dd>
+              <dt id="t-tip-label" hidden>Tip</dt><dd id="t-tip" hidden></dd>
               <dt class="grand">Total</dt><dd class="grand" id="t-total"></dd>
             </dl>
 
@@ -180,7 +181,17 @@
                 <textarea id="c-notes" rows="2" maxlength="500" placeholder="Allergies, utensils, anything we should know"></textarea>
               </label>
 
+              <fieldset class="tip-choice">
+                <legend>Add a tip?</legend>
+                <div class="pick-grid tip-grid" id="tip-choices" role="radiogroup" aria-label="Tip"></div>
+              </fieldset>
+
               <h3>Payment</h3>
+              <div class="wallets" id="wallets" hidden>
+                <div id="apple-pay-button" class="apple-pay-button" role="button" tabindex="0" aria-label="Pay with Apple Pay" hidden></div>
+                <div id="google-pay-button" class="google-pay-button" hidden></div>
+                <p class="or-card"><span>or pay with card</span></p>
+              </div>
               <div id="card-container"></div>
               <div id="turnstile-box" class="turnstile-box" hidden></div>
               <button type="submit" class="btn btn-primary pay-btn" id="pay-btn" disabled>Pay</button>

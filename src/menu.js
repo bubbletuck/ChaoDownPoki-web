@@ -55,6 +55,9 @@ export const MENU = {
     countOrdersFromLastMinutes: 90,
   },
 
+  // Tip choices at checkout, as % of the subtotal before tax ("No tip" is always offered)
+  tipPercents: [10, 15, 18],
+
   extraScoopPrice: 400,
   maxExtraScoops: 5,
   maxBowlQuantity: 20,
@@ -346,6 +349,9 @@ export const requiredPrompt = group => group.from === "sauces" ? "a sauce" : gro
 
 // The options in one of an extra's choice groups
 export const choiceItems = group => group.from === "sauces" ? MENU.sauces : group.items;
+
+// Tip in cents for a % of the subtotal (before tax). order.js has a copy.
+export const tipAmount = (subtotal, percent) => Math.round(subtotal * percent / 100);
 
 const money = amount => ({ amount, currency: MENU.currency });
 const modifier = (name, amount = 0) => ({ name, base_price_money: money(amount) });

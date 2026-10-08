@@ -4,7 +4,7 @@
 // GET  /api/status        → { busyExtra, busy, untilClose, turnstileSiteKey } → how busy we are (for pickup times)
 // POST /api/quote         → { bowls, extras }               → exact subtotal, tax and total from Square
 // POST /api/create-order  → { bowls, extras, customer, pickupNote, pickupMinutes, sourceId, expectedTotal,
-//                             idempotencyKey, turnstileToken }
+//                             idempotencyKey, turnstileToken, tipPercent }
 //                           (refused outside the ordering hours in src/menu.js, rate limited per IP,
 //                           and needs a Turnstile token once Turnstile is set up)
 //
@@ -18,7 +18,7 @@
 
 import {
   MENU, bowlToLineItem, extraToLineItem, orderingStatus,
-  prepMinutes, busyState, earliestPickup, pickupChoices, minutesUntilClose, normalizePhone,
+  prepMinutes, busyState, earliestPickup, pickupChoices, minutesUntilClose, normalizePhone, tipAmount,
 } from "./menu.js";
 
 const SQUARE_VERSION = "2025-01-23";
@@ -61,6 +61,12 @@ export default {
       const res = await createOrder(body, env);
       if (res.headers.get("X-Payment-Failed")) failedPayment(ip);
       return res;
+    }
+
+    // Apple Pay domain check: Apple looks here for the file from the Square
+    // Developer Dashboard, saved in the site as apple-pay-domain-association.txt
+    if (url.pathname === "/.well-known/apple-developer-merchantid-domain-association") {
+      return env.ASSETS.fetch(new Request(new URL("/apple-pay-domain-association.txt", url)));
     }
 
     return env.ASSETS.fetch(request);
@@ -131,6 +137,10 @@ async function createOrder(body, env) {
   const phone = normalizePhone(customer.phone);
   if (!phone) return json({ error: "Please enter a valid 10-digit phone number, like (916) 555-0123" }, 400);
 
+  // Tip: one of the % choices in src/menu.js, or none
+  const tipPercent = Number(body.tipPercent ?? 0);
+  if (tipPercent !== 0 && !MENU.tipPercents.includes(tipPercent)) return json({ error: "Please choose a tip" }, 400);
+
   // Pickup time: no sooner than this order takes to make, plus extra when we're busy
   const busyExtra = await busyExtraNow(env);
   const earliest = earliestPickup(prepMinutes(body.bowls, body.extras), busyExtra);
@@ -178,11 +188,13 @@ async function createOrder(body, env) {
     return json({ error: "Your total changed. Please review your order and try again.", ...totals(created) }, 409);
   }
 
-  // 2. Charge the card for the order total and attach the payment to the order.
+  // 2. Charge the card for the order total plus the tip, and attach the payment to the order.
+  const tip = tipAmount(totals(created).subtotal, tipPercent);
   const paymentRes = await square(env, "/v2/payments", {
     idempotency_key: `${key}-pay`,
     source_id: sourceId,
     amount_money: created.total_money,
+    ...(tip > 0 && { tip_money: { amount: tip, currency: created.total_money.currency } }),
     order_id: created.id,
     location_id: env.SQUARE_LOCATION_ID,
     autocomplete: true,
@@ -201,6 +213,8 @@ async function createOrder(body, env) {
     pickupMinutes,
     pickupTime,
     ...totals(created),
+    tip,
+    totalPaid: created.total_money.amount + tip,
   });
 }
 
