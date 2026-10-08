@@ -1,17 +1,19 @@
 // Cloudflare Worker: Square online ordering backend + static site fallback.
 //
 // GET  /api/menu          → the ordering menu and prices (src/menu.js)
-// POST /api/quote         → { bowls }                       → exact subtotal, tax and total from Square
-// POST /api/create-order  → { bowls, customer, pickupNote, sourceId, expectedTotal, idempotencyKey }
+// POST /api/quote         → { bowls, extras }               → exact subtotal, tax and total from Square
+// POST /api/create-order  → { bowls, extras, customer, pickupNote, sourceId, expectedTotal, idempotencyKey }
 //                           (refused outside the ordering hours in src/menu.js)
 //
 // A bowl looks like:
-//   { size: "regular", base: "white-rice", proteins: { salmon: 1, tuna: 1 },
-//     sauces: ["ponzu"], toppings: ["avocado"], note: "", quantity: 1 }
+//   { size: "regular", base: "white-rice", proteins: { salmon: 1, tuna: 1 }, prep: { salmon: "seared" },
+//     sauces: ["ponzu"], sauceOn: ["protein"], toppings: ["avocado"], note: "", quantity: 1 }
+// An extra (side, drink, dessert) looks like:
+//   { id: "egg-roll", option: "4", quantity: 1 }
 //
 // Every price comes from src/menu.js. The browser only says what was picked.
 
-import { MENU, bowlToLineItem, orderingStatus } from "./menu.js";
+import { MENU, bowlToLineItem, extraToLineItem, orderingStatus } from "./menu.js";
 
 const SQUARE_VERSION = "2025-01-23";
 
@@ -44,13 +46,19 @@ export default {
 
 // Builds the Square order (line items + tax) from the cart, or returns { error }.
 function buildOrder(body, env) {
-  const bowls = body?.bowls;
-  if (!Array.isArray(bowls) || bowls.length === 0) return { error: "Your order is empty" };
-  if (bowls.length > MENU.maxBowlsPerOrder) return { error: "That's a big order! Please call us for catering." };
+  const bowls = Array.isArray(body?.bowls) ? body.bowls : [];
+  const extras = Array.isArray(body?.extras) ? body.extras : [];
+  if (bowls.length + extras.length === 0) return { error: "Your order is empty" };
+  if (bowls.length + extras.length > MENU.maxBowlsPerOrder) return { error: "That's a big order! Please call us for catering." };
 
   const line_items = [];
   for (const bowl of bowls) {
     const { lineItem, error } = bowlToLineItem(bowl);
+    if (error) return { error };
+    line_items.push(lineItem);
+  }
+  for (const extra of extras) {
+    const { lineItem, error } = extraToLineItem(extra);
     if (error) return { error };
     line_items.push(lineItem);
   }

@@ -17,9 +17,9 @@ const esc = s => String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;"
 const fmt = cents => "$" + (cents / 100).toFixed(2);
 const byId = list => Object.fromEntries(list.map(x => [x.id, x]));
 
-let MENU, SIZES, BASES, PROTEINS, SAUCES, TOPPINGS, BOWL_SIDES, SAUCE_PLACEMENTS;
+let MENU, SIZES, BASES, PROTEINS, SAUCES, TOPPINGS, BOWL_SIDES, SAUCE_PLACEMENTS, PROTEIN_PREP, EXTRAS;
 let bowl;              // the bowl being built
-let cart = [];         // bowls added to the order
+let cart = [];         // bowls, plus extras marked { kind: "extra" }
 let quote = null;      // exact totals from Square for the current cart
 let quoteSeq = 0;
 let quoteTimer;
@@ -71,7 +71,7 @@ function checkHours() {
 // ---------- Bowl helpers ----------
 
 function newBowl(size = "regular") {
-  return { size, base: null, halves: [], side: null, proteins: {}, sauces: [], sauceOn: [], toppings: [], note: "", quantity: 1 };
+  return { size, base: null, halves: [], side: null, proteins: {}, prep: {}, sauces: [], sauceOn: [], toppings: [], note: "", quantity: 1 };
 }
 
 function scoopCount(b) {
@@ -115,6 +115,7 @@ function bowlProblem(b) {
   const included = includedScoops(size);
   if (scoops < included) return `Pick ${included - scoops} more scoop${included - scoops > 1 ? "s" : ""} of protein.`;
   if (scoops - included > MENU.maxExtraScoops) return `Up to ${MENU.maxExtraScoops} extra scoops per bowl.`;
+  if (Object.entries(b.prep || {}).some(([id, how]) => !b.proteins[id] || !PROTEINS[id].cookable || !PROTEIN_PREP[how])) return "Pick how you want your fish again.";
   if (b.sauces.some(id => !SAUCES[id])) return "Pick your sauces again.";
   const sauceOn = b.sauceOn || [];
   if (sauceOn.some(id => !SAUCE_PLACEMENTS[id])) return "Choose where you want your sauce again.";
@@ -136,12 +137,49 @@ function bowlDetail(b) {
       ? `${BASES[b.base].name} (${b.halves.map(id => BASES[id].name).join(" / ")})`
       : BASES[b.base].name,
     b.side ? `with ${BOWL_SIDES[b.side].name}` : "",
-    Object.entries(b.proteins).map(([id, n]) => PROTEINS[id].name + (n > 1 ? ` ×${n}` : "")).join(", "),
+    Object.entries(b.proteins).map(([id, n]) =>
+      PROTEINS[id].name + (n > 1 ? ` ×${n}` : "") + (b.prep?.[id] ? ` (${PROTEIN_PREP[b.prep[id]].name.toLowerCase()})` : "")
+    ).join(", "),
     b.sauces.length ? b.sauces.map(id => SAUCES[id].name).join(", ") + ` (${b.sauceOn.map(id => SAUCE_PLACEMENTS[id].name.toLowerCase()).join(", ")})` : "",
     b.toppings.map(id => TOPPINGS[id].name).join(", "),
   ].filter(Boolean);
   return parts.join(" · ");
 }
+
+// ---------- Extras (sides, drinks, dessert) ----------
+
+const isExtra = x => x.kind === "extra";
+const orderable = item => Number.isInteger(item.price) || (item.options || []).some(o => Number.isInteger(o.price));
+
+function extraUnitPrice(x) {
+  const item = EXTRAS[x.id];
+  return item.options ? item.options.find(o => o.id === x.option).price : item.price;
+}
+
+// Mirrors extraToLineItem() in src/menu.js
+function extraProblem(x) {
+  const item = EXTRAS[x.id];
+  if (!item || !Number.isInteger(x.quantity) || x.quantity < 1) return "Unknown item.";
+  if (item.options ? !item.options.some(o => o.id === x.option && Number.isInteger(o.price)) : (x.option || !Number.isInteger(item.price))) return `Choose a size for ${item.name}.`;
+  if (item.choiceOf === "sauces" ? !SAUCES[x.choice] : x.choice) return `Choose which sauce for ${item.name}.`;
+  return null;
+}
+
+function extraTitle(x) {
+  const item = EXTRAS[x.id];
+  const option = item.options && item.options.find(o => o.id === x.option);
+  return item.name + (option ? ` (${option.name})` : "");
+}
+
+function extraDetail(x) {
+  const item = EXTRAS[x.id];
+  return x.choice ? SAUCES[x.choice].name : item.detail || "";
+}
+
+// Works for both bowls and extras
+const itemPrice = x => (isExtra(x) ? extraUnitPrice(x) : bowlUnitPrice(x)) * x.quantity;
+const itemTitle = x => isExtra(x) ? extraTitle(x) : bowlTitle(x);
+const itemDetail = x => isExtra(x) ? extraDetail(x) : bowlDetail(x);
 
 // ---------- Builder ----------
 
@@ -178,10 +216,85 @@ function renderBuilder() {
       </span>`).join("")}
     </div>`).join("");
 
+  // One Raw / Seared / Cooked row per cookable fish, shown once it's in the bowl
+  $("#opt-prep").innerHTML = MENU.proteins.filter(p => p.cookable).map(p => `
+    <div class="prep-row" data-prep-row="${p.id}" hidden>
+      <span class="prep-name">${esc(p.name)}</span>
+      <div class="pick-row" role="radiogroup" aria-label="How to prepare ${esc(p.name)}">${MENU.proteinPrep.map(h =>
+        `<label class="pick"><input type="radio" name="prep-${p.id}" value="${h.id}"><span>${esc(h.name)}</span></label>`
+      ).join("")}</div>
+    </div>`).join("");
+
   $("#opt-sauce").innerHTML = MENU.sauces.map(s => pick("checkbox", "sauce", s)).join("");
   $("#opt-sauce-on").innerHTML = MENU.saucePlacements.map(p => pick("checkbox", "sauce-on", p)).join("");
   $("#opt-topping").innerHTML = MENU.toppings.map(t => pick("checkbox", "topping", t)).join("");
   decorateBadges($("#builder"));
+}
+
+function renderExtras() {
+  const items = MENU.extras.filter(orderable);
+  $("#extras").hidden = items.length === 0;
+  const groups = [...new Set(items.map(x => x.group))];
+  $("#opt-extras").innerHTML = groups.map(g => `
+    <h4>${esc(g)}</h4>
+    <ul class="extra-list">${items.filter(x => x.group === g).map(x => {
+      const options = (x.options || []).filter(o => Number.isInteger(o.price));
+      const price = options.length ? options.map(o => fmt(o.price)).join(" / ") : fmt(x.price);
+      return `
+      <li class="extra-row" data-extra="${x.id}">
+        <div class="extra-info">
+          <strong>${esc(x.name)}</strong>${badges(x)}
+          ${x.detail ? `<small>${esc(x.detail)}</small>` : ""}
+          <span class="price">${price}</span>
+        </div>
+        <div class="extra-controls">
+          ${options.length ? `<select data-option aria-label="${esc(x.name)} size">${options.map(o =>
+            `<option value="${esc(o.id)}">${esc(o.name)} · ${fmt(o.price)}</option>`).join("")}</select>` : ""}
+          ${x.choiceOf === "sauces" ? `<select data-choice aria-label="Which sauce"><option value="">Which sauce?</option>${MENU.sauces.map(s =>
+            `<option value="${s.id}">${esc(s.name)}</option>`).join("")}</select>` : ""}
+          <button type="button" class="btn btn-ghost btn-sm" data-add-extra="${x.id}">Add</button>
+        </div>
+      </li>`;
+    }).join("")}</ul>`).join("");
+  decorateBadges($("#extras"));
+}
+
+function wireExtras() {
+  $("#opt-extras").addEventListener("click", e => {
+    const btn = e.target.closest("[data-add-extra]");
+    if (!btn) return;
+    const row = btn.closest(".extra-row");
+    const choiceSelect = row.querySelector("[data-choice]");
+    const extra = {
+      kind: "extra",
+      id: btn.dataset.addExtra,
+      option: row.querySelector("[data-option]")?.value || null,
+      choice: choiceSelect?.value || null,
+      quantity: 1,
+    };
+    if (choiceSelect && !extra.choice) {
+      choiceSelect.focus();
+      return flashButton(btn, "Pick a sauce");
+    }
+    if (extraProblem(extra)) return flashButton(btn, "Unavailable");
+
+    // Same item again just bumps the quantity
+    const same = cart.find(x => isExtra(x) && x.id === extra.id && x.option === extra.option && x.choice === extra.choice);
+    if (same) {
+      same.quantity = Math.min(MENU.maxBowlQuantity, same.quantity + 1);
+    } else {
+      if (cart.length >= MENU.maxBowlsPerOrder) return flashButton(btn, "Order full");
+      cart.push(extra);
+    }
+    cartChanged();
+    flashButton(btn, "Added ✓");
+  });
+}
+
+function flashButton(btn, text) {
+  clearTimeout(btn._flash);
+  btn.textContent = text;
+  btn._flash = setTimeout(() => btn.textContent = "Add", 1400);
 }
 
 function syncBuilder() {
@@ -219,6 +332,16 @@ function syncBuilder() {
     chip.querySelector(".cc-remove").disabled = locked;
   });
 
+  let anyPrep = false;
+  form.querySelectorAll(".prep-row").forEach(row => {
+    const id = row.dataset.prepRow;
+    row.hidden = !bowl.proteins[id];
+    anyPrep = anyPrep || !row.hidden;
+    const how = bowl.prep[id] || MENU.proteinPrep[0].id;
+    row.querySelectorAll("input").forEach(i => i.checked = i.value === how);
+  });
+  $("#prep-picker").hidden = !anyPrep;
+
   const status = $("#scoop-status");
   if (size.proteins) {
     status.textContent = `${size.name} comes with ${size.scoops} scoops of ${size.proteins.map(id => PROTEINS[id].name).join(", ")}. Extra scoops are ${fmt(MENU.extraScoopPrice)} each.`;
@@ -252,6 +375,7 @@ function wireBuilder() {
       const wasLocked = SIZES[bowl.size].proteins;
       const size = SIZES[value];
       bowl.size = value;
+      bowl.prep = {};
       if (size.cooked) {
         bowl.proteins = {};
       } else {
@@ -267,6 +391,10 @@ function wireBuilder() {
       bowl.halves = checked ? [...bowl.halves, value].slice(-2) : bowl.halves.filter(id => id !== value);
     } else if (name === "side") {
       bowl.side = value;
+    } else if (name.startsWith("prep-")) {
+      const id = name.slice(5);
+      if (value === MENU.proteinPrep[0].id) delete bowl.prep[id];
+      else bowl.prep[id] = value;
     } else if (name === "sauce") {
       bowl.sauces = checked ? [...bowl.sauces, value] : bowl.sauces.filter(id => id !== value);
       // Start with "mixed with protein"; clear placement when no sauce is left
@@ -292,7 +420,10 @@ function wireBuilder() {
     } else if (remove) {
       const id = remove.dataset.remove;
       if (!bowl.proteins[id]) return;
-      if (--bowl.proteins[id] <= 0) delete bowl.proteins[id];
+      if (--bowl.proteins[id] <= 0) {
+        delete bowl.proteins[id];
+        delete bowl.prep[id];
+      }
     } else {
       return;
     }
@@ -330,24 +461,45 @@ function loadCart() {
   try {
     const saved = JSON.parse(localStorage.getItem(CART_KEY) || "[]");
     if (!Array.isArray(saved)) return [];
+    const extras = saved.filter(x => x && isExtra(x) && !extraProblem(x));
     // Fill in fields added after a cart may have been saved
-    return saved
-      .filter(b => b && SIZES[b.size] && b.proteins && Array.isArray(b.sauces) && Array.isArray(b.toppings))
-      .map(b => ({ ...b, halves: b.halves || [], sauceOn: b.sauceOn || (b.sauces.length ? ["protein"] : []) }))
+    const bowls = saved
+      .filter(b => b && !isExtra(b) && SIZES[b.size] && b.proteins && Array.isArray(b.sauces) && Array.isArray(b.toppings))
+      .map(b => ({ ...b, prep: b.prep || {}, halves: b.halves || [], sauceOn: b.sauceOn || (b.sauces.length ? ["protein"] : []) }))
       .filter(b => !bowlProblem(b));
+    return [...bowls, ...extras];
   } catch {
     return [];
   }
 }
 
-function cartItemsHtml(items, removable) {
-  return items.map((b, i) => `
+function cartItemsHtml(items, editable) {
+  return items.map((x, i) => {
+    const detail = itemDetail(x);
+    return `
     <li>
-      <span class="ci-title">${b.quantity > 1 ? `${b.quantity} × ` : ""}${esc(bowlTitle(b))}</span>
-      <span class="ci-price">${fmt(bowlPrice(b))}</span>
-      <span class="ci-detail">${esc(bowlDetail(b))}${b.note ? `<br><em>“${esc(b.note)}”</em>` : ""}</span>
-      ${removable ? `<button type="button" class="ci-remove" data-index="${i}">Remove</button>` : ""}
-    </li>`).join("");
+      <span class="ci-title">${!editable && x.quantity > 1 ? `${x.quantity} × ` : ""}${esc(itemTitle(x))}</span>
+      <span class="ci-price">${fmt(itemPrice(x))}</span>
+      ${detail || x.note ? `<span class="ci-detail">${esc(detail)}${x.note ? `<br><em>“${esc(x.note)}”</em>` : ""}</span>` : ""}
+      ${editable ? `
+      <div class="ci-actions">
+        <div class="qty qty-sm" role="group" aria-label="Quantity of ${esc(itemTitle(x))}">
+          <button type="button" data-dec="${i}" aria-label="One fewer" ${x.quantity <= 1 ? "disabled" : ""}>−</button>
+          <output>${x.quantity}</output>
+          <button type="button" data-inc="${i}" aria-label="One more" ${x.quantity >= MENU.maxBowlQuantity ? "disabled" : ""}>+</button>
+        </div>
+        <button type="button" class="ci-remove" data-index="${i}">Remove</button>
+      </div>` : ""}
+    </li>`;
+  }).join("");
+}
+
+// What the Worker expects: bowls and extras in separate lists
+function orderPayload() {
+  return {
+    bowls: cart.filter(x => !isExtra(x)),
+    extras: cart.filter(isExtra).map(({ id, option, choice, quantity }) => ({ id, option, choice, quantity })),
+  };
 }
 
 function renderCart() {
@@ -362,7 +514,7 @@ function renderCart() {
 }
 
 function updateTotals() {
-  const subtotal = cart.reduce((a, b) => a + bowlPrice(b), 0);
+  const subtotal = cart.reduce((a, x) => a + itemPrice(x), 0);
   $("#t-subtotal").textContent = fmt(subtotal);
   $("#t-tax").textContent = quote ? fmt(quote.tax) : "…";
   $("#t-total").textContent = quote ? fmt(quote.total) : "…";
@@ -391,7 +543,7 @@ function requestQuote() {
       const res = await fetch("/api/quote", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ bowls: cart }),
+        body: JSON.stringify(orderPayload()),
       });
       const data = await res.json();
       if (seq !== quoteSeq) return;
@@ -433,9 +585,20 @@ async function initCard() {
 
 function wireCheckout() {
   $("#cart-list").addEventListener("click", e => {
-    const btn = e.target.closest(".ci-remove");
-    if (!btn) return;
-    cart.splice(Number(btn.dataset.index), 1);
+    const remove = e.target.closest(".ci-remove");
+    const inc = e.target.closest("[data-inc]");
+    const dec = e.target.closest("[data-dec]");
+    if (remove) {
+      cart.splice(Number(remove.dataset.index), 1);
+    } else if (inc) {
+      const x = cart[Number(inc.dataset.inc)];
+      x.quantity = Math.min(MENU.maxBowlQuantity, x.quantity + 1);
+    } else if (dec) {
+      const x = cart[Number(dec.dataset.dec)];
+      x.quantity = Math.max(1, x.quantity - 1);
+    } else {
+      return;
+    }
     cartChanged();
   });
 
@@ -468,7 +631,7 @@ function wireCheckout() {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            bowls: cart,
+            ...orderPayload(),
             customer: { name, phone },
             pickupNote,
             sourceId: result.token,
@@ -540,12 +703,16 @@ async function init() {
   TOPPINGS = byId(MENU.toppings);
   BOWL_SIDES = byId(MENU.bowlSides);
   SAUCE_PLACEMENTS = byId(MENU.saucePlacements);
+  PROTEIN_PREP = byId(MENU.proteinPrep);
+  EXTRAS = byId(MENU.extras);
 
   bowl = newBowl();
   cart = loadCart();
   renderBuilder();
+  renderExtras();
   syncBuilder();
   wireBuilder();
+  wireExtras();
   wireCheckout();
   $("#order-layout").hidden = false;
   renderCart();

@@ -66,16 +66,23 @@ export const MENU = {
   proteins: [
     { id: "spicy-tuna",     name: "Spicy Tuna",     group: "Raw", raw: true, spice: 2 },
     { id: "chaodown-mix",   name: "ChaoDown Mix",   group: "Raw", raw: true, spice: 1, detail: "tuna & salmon, spicy-sweet sauce" },
-    { id: "salmon",         name: "Salmon",         group: "Raw", raw: true },
-    { id: "tuna",           name: "Tuna",           group: "Raw", raw: true },
-    { id: "yellowtail",     name: "Yellowtail",     group: "Raw", raw: true },
-    { id: "scallops",       name: "Scallops",       group: "Raw", raw: true },
+    { id: "salmon",         name: "Salmon",         group: "Raw", raw: true, cookable: true },
+    { id: "tuna",           name: "Tuna",           group: "Raw", raw: true, cookable: true },
+    { id: "yellowtail",     name: "Yellowtail",     group: "Raw", raw: true, cookable: true },
+    { id: "scallops",       name: "Scallops",       group: "Raw", raw: true, cookable: true },
     { id: "octopus-salad",  name: "Octopus Salad",  group: "Cooked" },
     { id: "shrimp",         name: "Shrimp",         group: "Cooked" },
     { id: "tofu",           name: "Tofu",           group: "Cooked" },
     { id: "tempura-shrimp", name: "Tempura Shrimp", group: "Cooked" },
     { id: "chicken",        name: "Chicken",        group: "Cooked" },
     { id: "crab-salad",     name: "Crab Salad",     group: "Cooked" },
+  ],
+
+  // How customers can have a cookable (raw) fish prepared. The first is the default.
+  proteinPrep: [
+    { id: "raw",    name: "Raw" },
+    { id: "seared", name: "Seared" },
+    { id: "cooked", name: "Cooked" },
   ],
 
   // Where the sauce goes. Customers pick any combination.
@@ -127,6 +134,34 @@ export const MENU = {
     { id: "wonton-strips",  name: "Wonton Strips" },
     { id: "sesame-seeds",   name: "Sesame Seeds" },
   ],
+
+  // Sides, soup, drinks, and dessert ordered on their own.
+  //   options:  sizes to pick from, each with its own price
+  //   choiceOf: "sauces" means the customer picks which sauce
+  //   price: null hides the item from online ordering until a price is set
+  extras: [
+    { id: "chaodown-fries", group: "Sides", name: "Chaodown Fries", price: 569 },
+    { id: "miso-soup",      group: "Sides", name: "Miso Soup", price: 400 },
+    { id: "egg-roll",       group: "Sides", name: "Egg Roll", options: [
+      { id: "2", name: "2 pcs", price: 499 }, { id: "4", name: "4 pcs", price: 899 } ] },
+    { id: "cheese-wonton",  group: "Sides", name: "Cheese Wonton", options: [
+      { id: "2", name: "2 pcs", price: 499 }, { id: "4", name: "4 pcs", price: 899 } ] },
+    { id: "pot-sticker",    group: "Sides", name: "Pot Sticker", options: [
+      { id: "2", name: "2 pcs", price: 499 }, { id: "4", name: "4 pcs", price: 799 } ] },
+    { id: "fried-wontons",  group: "Sides", name: "Deep Fried Wontons", price: 499 },
+    { id: "tempura-shrimp", group: "Sides", name: "Tempura Shrimp", detail: "4 pcs", price: 900 },
+    { id: "side-sauce",     group: "Sides", name: "Side of Sauce", detail: "8 oz", price: 500, choiceOf: "sauces" },
+    { id: "side-edamame",   group: "Sides", name: "Side of Edamame", detail: "8 oz", price: 500 },
+    { id: "side-seaweed",   group: "Sides", name: "Side of Seaweed", detail: "8 oz", price: 500 },
+    { id: "side-crab",      group: "Sides", name: "Side of Crab Salad", detail: "8 oz", price: 500 },
+    { id: "side-kimchi",    group: "Sides", name: "Side of Kimchi", detail: "8 oz", spice: 1, price: 500 },
+
+    // TODO: add prices to put these on the order page
+    { id: "fountain-drink", group: "Drinks", name: "Fountain Drink", price: null },
+    { id: "bottled-drink",  group: "Drinks", name: "Bottled Drink", detail: "pick from our cooler at pickup", price: null },
+    { id: "fish-ice-cream", group: "Dessert", name: "Fish Ice Cream", price: null },
+    { id: "mochi-ice-cream", group: "Dessert", name: "Mochi Ice Cream", price: null },
+  ],
 };
 
 const byId = list => Object.fromEntries(list.map(x => [x.id, x]));
@@ -137,6 +172,8 @@ const SAUCES = byId(MENU.sauces);
 const TOPPINGS = byId(MENU.toppings);
 const BOWL_SIDES = byId(MENU.bowlSides);
 const SAUCE_PLACEMENTS = byId(MENU.saucePlacements);
+const PROTEIN_PREP = byId(MENU.proteinPrep);
+const EXTRAS = byId(MENU.extras);
 
 // Is online ordering open right now? Returns { open, message }.
 // order.js has a copy of this so the page can show the same message.
@@ -219,6 +256,12 @@ export function bowlToLineItem(bowl) {
   const extraScoops = scoops - included;
   if (extraScoops > MENU.maxExtraScoops) return { error: `Up to ${MENU.maxExtraScoops} extra scoops per bowl` };
 
+  // Prep for cookable fish: { proteinId: "seared" | "cooked" }. Raw is the default.
+  const prep = bowl.prep && typeof bowl.prep === "object" ? bowl.prep : {};
+  for (const [id, how] of Object.entries(prep)) {
+    if (!bowl.proteins?.[id] || !PROTEINS[id].cookable || !PROTEIN_PREP[how]) return { error: "Invalid protein prep" };
+  }
+
   const sauces = Array.isArray(bowl.sauces) ? bowl.sauces : [];
   if (new Set(sauces).size !== sauces.length || sauces.some(id => !SAUCES[id])) return { error: "Invalid sauce" };
 
@@ -233,7 +276,8 @@ export function bowlToLineItem(bowl) {
   const modifiers = [modifier(`Base: ${baseName}`)];
   if (side) modifiers.push(modifier(`Side: ${side.name}`));
   for (const [id, count] of proteinEntries) {
-    modifiers.push(modifier(`Protein: ${PROTEINS[id].name}${count > 1 ? ` ×${count}` : ""}`));
+    const how = prep[id] && prep[id] !== MENU.proteinPrep[0].id ? ` (${PROTEIN_PREP[prep[id]].name})` : "";
+    modifiers.push(modifier(`Protein: ${PROTEINS[id].name}${count > 1 ? ` ×${count}` : ""}${how}`));
   }
   if (extraScoops > 0) {
     modifiers.push(modifier(`Extra protein scoop${extraScoops > 1 ? `s ×${extraScoops}` : ""}`, extraScoops * MENU.extraScoopPrice));
@@ -257,5 +301,47 @@ export function bowlToLineItem(bowl) {
   if (typeof bowl.note === "string" && bowl.note.trim()) {
     lineItem.note = bowl.note.trim().slice(0, 200);
   }
+  return { lineItem };
+}
+
+// Turns one side / drink / dessert into a Square line item, priced from MENU.
+// An extra looks like { id: "egg-roll", option: "4", choice: null, quantity: 2 }.
+// Returns { lineItem } or { error }.
+export function extraToLineItem(extra) {
+  const item = EXTRAS[extra?.id];
+  if (!item) return { error: "Unknown item" };
+
+  const quantity = Number(extra.quantity ?? 1);
+  if (!Number.isInteger(quantity) || quantity < 1 || quantity > MENU.maxBowlQuantity) {
+    return { error: "Invalid quantity" };
+  }
+
+  let price = item.price;
+  let variation = item.detail || "Regular";
+  if (item.options) {
+    const option = item.options.find(o => o.id === extra.option);
+    if (!option) return { error: `Choose a size for ${item.name}` };
+    price = option.price;
+    variation = option.name;
+  } else if (extra.option) {
+    return { error: "Invalid option" };
+  }
+  if (!Number.isInteger(price)) return { error: `${item.name} isn't available online yet` };
+
+  const modifiers = [];
+  if (item.choiceOf === "sauces") {
+    if (!SAUCES[extra.choice]) return { error: `Choose which sauce for ${item.name}` };
+    modifiers.push(modifier(SAUCES[extra.choice].name));
+  } else if (extra.choice) {
+    return { error: "Invalid choice" };
+  }
+
+  const lineItem = {
+    name: item.name,
+    variation_name: variation,
+    quantity: String(quantity),
+    base_price_money: money(price),
+  };
+  if (modifiers.length) lineItem.modifiers = modifiers;
   return { lineItem };
 }

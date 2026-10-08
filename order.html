@@ -56,6 +56,7 @@
 
         <div class="order-layout" id="order-layout" hidden>
 
+          <div class="order-main">
           <!-- ================= BOWL BUILDER ================= -->
           <form class="builder" id="builder" novalidate>
             <div class="build-step">
@@ -83,7 +84,12 @@
               <h3><span class="num">3</span> Pick your protein</h3>
               <p class="step-note" id="scoop-status" aria-live="polite"></p>
               <div id="opt-protein"></div>
-              <p class="hint">Raw proteins can be cooked or seared on request (except Spicy Tuna). Just add a note below.</p>
+              <div class="half-picker" id="prep-picker" hidden>
+                <h4>How do you want your fish?</h4>
+                <p class="step-note">Raw, or we can sear or cook it for you.</p>
+                <div id="opt-prep"></div>
+              </div>
+              <p class="hint">Salmon, Tuna, Yellowtail, and Scallops can be seared or cooked. Spicy Tuna and ChaoDown Mix are served raw.</p>
             </div>
 
             <div class="build-step">
@@ -106,10 +112,11 @@
             <div class="build-step add-step">
               <label class="field">
                 <span>Notes for this bowl <small>(optional)</small></span>
-                <input type="text" id="bowl-note" maxlength="200" placeholder="e.g. sear the salmon, light sauce">
+                <input type="text" id="bowl-note" maxlength="200" placeholder="e.g. light sauce, extra crispy onion">
               </label>
               <div class="add-row">
-                <div class="qty" aria-label="Quantity">
+                <span class="qty-label" id="qty-label">How many of this bowl?</span>
+                <div class="qty" role="group" aria-labelledby="qty-label">
                   <button type="button" id="qty-minus" aria-label="One fewer">−</button>
                   <output id="qty-value" aria-live="polite">1</output>
                   <button type="button" id="qty-plus" aria-label="One more">+</button>
@@ -119,6 +126,14 @@
               <p class="form-msg" id="builder-msg" role="status" hidden></p>
             </div>
           </form>
+
+          <!-- ================= SIDES, DRINKS, DESSERT ================= -->
+          <div class="build-step extras" id="extras" aria-labelledby="extras-title">
+            <h3 id="extras-title"><span class="num">+</span> Add sides &amp; more</h3>
+            <p class="step-note">Fries, egg rolls, miso soup, and more. Add as many as you like.</p>
+            <div id="opt-extras"></div>
+          </div>
+          </div>
 
           <!-- ================= CART + CHECKOUT ================= -->
           <aside class="order-panel" id="checkout" aria-labelledby="checkout-title">
