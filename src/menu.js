@@ -20,7 +20,7 @@ export const MENU = {
     timeZone: "America/Los_Angeles",
     open: "11:00",
     close: "20:00",
-    lastOrderMinutes: 15,
+    lastOrderMinutes: 0,
     closedDates: [],
   },
 
