@@ -36,14 +36,19 @@ export const MENU = {
   //   start at pokeMinutes, or cookedMinutes if any teriyaki/chicken bowl or chicken scoop
   //   + extraMinutesPerBowl for each bowl after the first
   //   + extraMinutesPerItem for each side, soup, drink, or dessert
-  //   + extraMinutesPerOrder for each paid online order still being made past busyAfterOrders
+  //   + busy time: when busyOrders paid online orders come in within busySpanMinutes,
+  //     we're busy for busyMinutes (then it ends, even if orders keep coming; only a
+  //     new burst after that starts it again). While busy, extraMinutesPerOrder for
+  //     the 6th order of the burst and each one after it.
   pickup: {
     choices: [15, 20, 25, 30, 40, 50, 60, 75, 90],
     pokeMinutes: 15,
     cookedMinutes: 20,
     extraMinutesPerBowl: 3,
     extraMinutesPerItem: 1,
-    busyAfterOrders: 4,
+    busyOrders: 6,
+    busySpanMinutes: 5,
+    busyMinutes: 20,
     extraMinutesPerOrder: 5,
     maxMinutes: 90,
     countOrdersFromLastMinutes: 90,
@@ -288,10 +293,26 @@ export function prepMinutes(bowls = [], extras = []) {
     + itemCount * p.extraMinutesPerItem;
 }
 
-// Extra minutes when lots of paid online orders are still being made
-export function busyExtraMinutes(openOrders) {
+// Are we busy right now? Takes the times (ms) recent paid online orders were placed.
+// A burst of busyOrders within busySpanMinutes starts a busy period of busyMinutes;
+// orders during it don't start another, so it can't run longer than busyMinutes.
+// Returns { busyExtra (minutes to add to pickup), busyUntil (ms) or null }.
+export function busyState(orderTimes = [], now = Date.now()) {
   const p = MENU.pickup;
-  return Math.max(0, openOrders - p.busyAfterOrders) * p.extraMinutesPerOrder;
+  const span = p.busySpanMinutes * 60000;
+  const times = orderTimes.filter(t => t <= now).sort((a, b) => a - b);
+  let from = null, end = -Infinity;
+  for (const t of times) {
+    if (t < end) continue;  // already busy
+    // Orders in the span ending at t, not counting any from the last busy period
+    const since = Math.max(end, t - span);
+    const burst = times.filter(x => x >= since && x <= t).length;
+    if (burst >= p.busyOrders) { from = since; end = t + p.busyMinutes * 60000; }
+  }
+  if (now >= end) return { busyExtra: 0, busyUntil: null };
+  // Busier still if orders keep coming in: count from the start of the burst
+  const count = times.filter(x => x >= from).length;
+  return { busyExtra: (count - p.busyOrders + 1) * p.extraMinutesPerOrder, busyUntil: end };
 }
 
 export const earliestPickup = (prep, busyExtra) => Math.min(MENU.pickup.maxMinutes, prep + busyExtra);

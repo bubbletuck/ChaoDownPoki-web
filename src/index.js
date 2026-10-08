@@ -16,7 +16,7 @@
 
 import {
   MENU, bowlToLineItem, extraToLineItem, orderingStatus,
-  prepMinutes, busyExtraMinutes, earliestPickup, pickupChoices, minutesUntilClose, normalizePhone,
+  prepMinutes, busyState, earliestPickup, pickupChoices, minutesUntilClose, normalizePhone,
 } from "./menu.js";
 
 const SQUARE_VERSION = "2025-01-23";
@@ -118,7 +118,7 @@ async function createOrder(body, env) {
   if (!phone) return json({ error: "Please enter a valid 10-digit phone number, like (916) 555-0123" }, 400);
 
   // Pickup time: no sooner than this order takes to make, plus extra when we're busy
-  const busyExtra = busyExtraMinutes(await openOrderCount(env));
+  const busyExtra = await busyExtraNow(env);
   const earliest = earliestPickup(prepMinutes(body.bowls, body.extras), busyExtra);
   const choices = pickupChoices(earliest);
   const pickupMinutes = Number(body.pickupMinutes);
@@ -177,7 +177,7 @@ async function createOrder(body, env) {
     return json({ error: paymentMessage(paymentRes.errors), details: paymentRes.errors }, paymentRes.status);
   }
   const payment = paymentRes.data.payment;
-  busy.openOrders++;  // count it right away so the next customer sees the busier kitchen
+  busy.orderTimes = [...busy.orderTimes, Date.now()];  // count it right away so the next customer sees the busier kitchen
 
   return json({
     orderId: created.id,
@@ -192,32 +192,37 @@ async function createOrder(body, env) {
 
 // ---------- Busy-kitchen pickup times ----------
 
-// How many paid online pickup orders are still being made. Cached for 20s
-// so a page full of customers doesn't hammer Square.
-let busy = { at: 0, live: false, openOrders: 0 };
-async function openOrderCount(env) {
-  if (Date.now() - busy.at < 20000) return busy.openOrders;
+// When recent paid online pickup orders were placed (ms), whether or not the
+// kitchen has finished them. Cached for 20s so a page full of customers
+// doesn't hammer Square.
+let busy = { at: 0, live: false, orderTimes: [] };
+async function recentOrderTimes(env) {
+  if (Date.now() - busy.at < 20000) return busy.orderTimes;
   const since = new Date(Date.now() - MENU.pickup.countOrdersFromLastMinutes * 60000).toISOString();
   const res = await square(env, "/v2/orders/search", {
     location_ids: [env.SQUARE_LOCATION_ID],
-    limit: 100,
+    limit: 500,
     query: {
       filter: {
-        state_filter: { states: ["OPEN"] },
+        state_filter: { states: ["OPEN", "COMPLETED"] },
         date_time_filter: { created_at: { start_at: since } },
-        fulfillment_filter: { fulfillment_types: ["PICKUP"], fulfillment_states: ["PROPOSED", "RESERVED"] },
+        fulfillment_filter: { fulfillment_types: ["PICKUP"] },
       },
       sort: { sort_field: "CREATED_AT", sort_order: "DESC" },
     },
   });
-  if (!res.ok) {  // Square hiccup: keep the last known count
+  if (!res.ok) {  // Square hiccup: keep the last known times
     busy.live = false;
-    return busy.openOrders;
+    return busy.orderTimes;
   }
   // Only paid orders: a declined card leaves an unpaid order behind that nobody is making
-  busy = { at: Date.now(), live: true, openOrders: (res.data.orders || []).filter(o => o.tenders?.length).length };
-  return busy.openOrders;
+  const orderTimes = (res.data.orders || []).filter(o => o.tenders?.length).map(o => Date.parse(o.created_at));
+  busy = { at: Date.now(), live: true, orderTimes };
+  return orderTimes;
 }
+
+// How many minutes to add to pickup times right now
+const busyExtraNow = async env => busyState(await recentOrderTimes(env)).busyExtra;
 
 // The page works out each order's earliest pickup from these
 function statusFor(busyExtra) {
@@ -230,7 +235,7 @@ function statusFor(busyExtra) {
 }
 
 async function status(env) {
-  return json(statusFor(busyExtraMinutes(await openOrderCount(env))));
+  return json(statusFor(await busyExtraNow(env)));
 }
 
 // "7:40 PM" in the shop's time zone
