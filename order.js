@@ -26,6 +26,46 @@ let quoteTimer;
 let card = null;       // Square card form
 let busy = false;
 let attemptKey = null; // reused only if a checkout request never got an answer
+let hours = { open: false, message: "" };
+
+// ---------- Ordering hours ----------
+
+// Same rules as orderingStatus() in src/menu.js, which the Worker enforces
+function orderingStatus(now = new Date()) {
+  const h = MENU.hours;
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat("en-US", {
+      timeZone: h.timeZone, year: "numeric", month: "2-digit", day: "2-digit",
+      hour: "2-digit", minute: "2-digit", hourCycle: "h23",
+    }).formatToParts(now).map(p => [p.type, p.value])
+  );
+  const today = `${parts.year}-${parts.month}-${parts.day}`;
+  const minutes = Number(parts.hour) * 60 + Number(parts.minute);
+  const toMinutes = t => t.split(":").reduce((hh, mm) => Number(hh) * 60 + Number(mm));
+  const label = m => `${(Math.floor(m / 60) + 11) % 12 + 1}:${String(m % 60).padStart(2, "0")} ${m < 720 ? "AM" : "PM"}`;
+  const open = toMinutes(h.open);
+  const lastOrder = toMinutes(h.close) - h.lastOrderMinutes;
+
+  if (h.closedDates.includes(today)) {
+    return { open: false, message: "We're closed today, so online ordering is off. Please check back tomorrow." };
+  }
+  if (minutes < open) {
+    return { open: false, message: `Online ordering opens today at ${label(open)}. You can build your order now and check out then.` };
+  }
+  if (minutes >= lastOrder) {
+    return { open: false, message: `Online ordering is closed for today (last orders at ${label(lastOrder)}). We start taking orders again at ${label(open)}.` };
+  }
+  return { open: true, message: `Taking online orders until ${label(lastOrder)} today.` };
+}
+
+function checkHours() {
+  hours = orderingStatus();
+  const el = $("#hours-notice");
+  el.textContent = hours.message;
+  el.classList.toggle("closed", !hours.open);
+  el.hidden = false;
+  updateTotals();
+}
 
 // ---------- Bowl helpers ----------
 
@@ -266,8 +306,8 @@ function updateTotals() {
   $("#bar-total").textContent = quote ? fmt(quote.total) : fmt(subtotal);
 
   const pay = $("#pay-btn");
-  pay.disabled = busy || !card || !quote || cart.length === 0;
-  pay.textContent = busy ? "Placing your order…" : quote ? `Pay ${fmt(quote.total)}` : "Pay";
+  pay.disabled = busy || !hours.open || !card || !quote || cart.length === 0;
+  pay.textContent = busy ? "Placing your order…" : !hours.open ? "Online ordering is closed" : quote ? `Pay ${fmt(quote.total)}` : "Pay";
 }
 
 function cartChanged() {
@@ -347,6 +387,7 @@ function wireCheckout() {
     if (cart.length === 0) return checkoutError("Your order is empty.");
     if (!name) { $("#c-name").focus(); return checkoutError("Please enter a name for pickup."); }
     if (phone.replace(/\D/g, "").length < 10) { $("#c-phone").focus(); return checkoutError("Please enter a phone number we can reach you at."); }
+    if (!hours.open) return checkoutError(hours.message);
     if (!card || !quote) return;
 
     busy = true;
@@ -379,6 +420,7 @@ function wireCheckout() {
       attemptKey = null;
 
       const data = await res.json().catch(() => ({}));
+      if (data.closed) checkHours();
       if (res.status === 409 && Number.isInteger(data.total)) {
         quote = { subtotal: data.subtotal, tax: data.tax, total: data.total };
       }
@@ -444,6 +486,8 @@ async function init() {
   renderCart();
   requestQuote();
   initCard();
+  checkHours();
+  setInterval(checkHours, 30000);
 }
 
 init();

@@ -13,6 +13,17 @@ export const MENU = {
   taxName: "Sales Tax",
   taxPercent: "7.75",
 
+  // Online ordering hours, in the shop's time zone. Orders stop
+  // `lastOrderMinutes` before closing so there's time to make them.
+  // Add dates you're closed as "YYYY-MM-DD", e.g. "2026-11-26".
+  hours: {
+    timeZone: "America/Los_Angeles",
+    open: "11:00",
+    close: "20:00",
+    lastOrderMinutes: 15,
+    closedDates: [],
+  },
+
   extraScoopPrice: 400,
   maxExtraScoops: 5,
   maxSauces: 3,
@@ -99,6 +110,35 @@ const BASES = byId(MENU.bases);
 const PROTEINS = byId(MENU.proteins);
 const SAUCES = byId(MENU.sauces);
 const TOPPINGS = byId(MENU.toppings);
+
+// Is online ordering open right now? Returns { open, message }.
+// order.js has a copy of this so the page can show the same message.
+export function orderingStatus(now = new Date()) {
+  const h = MENU.hours;
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat("en-US", {
+      timeZone: h.timeZone, year: "numeric", month: "2-digit", day: "2-digit",
+      hour: "2-digit", minute: "2-digit", hourCycle: "h23",
+    }).formatToParts(now).map(p => [p.type, p.value])
+  );
+  const today = `${parts.year}-${parts.month}-${parts.day}`;
+  const minutes = Number(parts.hour) * 60 + Number(parts.minute);
+  const toMinutes = t => t.split(":").reduce((hh, mm) => Number(hh) * 60 + Number(mm));
+  const label = m => `${(Math.floor(m / 60) + 11) % 12 + 1}:${String(m % 60).padStart(2, "0")} ${m < 720 ? "AM" : "PM"}`;
+  const open = toMinutes(h.open);
+  const lastOrder = toMinutes(h.close) - h.lastOrderMinutes;
+
+  if (h.closedDates.includes(today)) {
+    return { open: false, message: "We're closed today, so online ordering is off. Please check back tomorrow." };
+  }
+  if (minutes < open) {
+    return { open: false, message: `Online ordering opens today at ${label(open)}. You can build your order now and check out then.` };
+  }
+  if (minutes >= lastOrder) {
+    return { open: false, message: `Online ordering is closed for today (last orders at ${label(lastOrder)}). We start taking orders again at ${label(open)}.` };
+  }
+  return { open: true, message: `Taking online orders until ${label(lastOrder)} today.` };
+}
 
 const money = amount => ({ amount, currency: MENU.currency });
 const modifier = (name, amount = 0) => ({ name, base_price_money: money(amount) });

@@ -3,6 +3,7 @@
 // GET  /api/menu          → the ordering menu and prices (src/menu.js)
 // POST /api/quote         → { bowls }                       → exact subtotal, tax and total from Square
 // POST /api/create-order  → { bowls, customer, pickupNote, sourceId, expectedTotal, idempotencyKey }
+//                           (refused outside the ordering hours in src/menu.js)
 //
 // A bowl looks like:
 //   { size: "regular", base: "white-rice", proteins: { salmon: 1, tuna: 1 },
@@ -10,7 +11,7 @@
 //
 // Every price comes from src/menu.js. The browser only says what was picked.
 
-import { MENU, bowlToLineItem } from "./menu.js";
+import { MENU, bowlToLineItem, orderingStatus } from "./menu.js";
 
 const SQUARE_VERSION = "2025-01-23";
 
@@ -82,6 +83,9 @@ async function quote(body, env) {
 }
 
 async function createOrder(body, env) {
+  const status = orderingStatus();
+  if (!status.open) return json({ error: status.message, closed: true }, 403);
+
   const { order, error } = buildOrder(body, env);
   if (error) return json({ error }, 400);
 

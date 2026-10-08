@@ -712,6 +712,16 @@ button.btn { font: inherit; cursor: pointer; }
 .form-msg.error { color: var(--chili); }
 .form-msg.ok { color: var(--sea); }
 #page-error { margin-bottom: 24px; }
+.hours-notice {
+  margin: 0 0 24px;
+  padding: 12px 18px;
+  border-radius: 12px;
+  border-left: 4px solid var(--sea);
+  background: var(--white);
+  box-shadow: 0 4px 14px rgba(16, 48, 47, 0.06);
+  font-weight: 500;
+}
+.hours-notice.closed { border-left-color: var(--chili); background: #fdeeea; }
 
 .order-panel {
   position: sticky;
