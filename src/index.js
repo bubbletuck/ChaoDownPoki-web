@@ -29,8 +29,11 @@ export default {
       if (request.method !== "POST") {
         return json({ error: "Method not allowed" }, 405, { Allow: "POST" });
       }
-      if (!env.SQUARE_ACCESS_TOKEN || !env.SQUARE_LOCATION_ID) {
-        return json({ error: "Online ordering is not set up yet. Please call us to order." }, 500);
+      // Names (never values) of missing settings, to make setup problems easy to spot
+      const missing = ["SQUARE_ACCESS_TOKEN", "SQUARE_LOCATION_ID"].filter(name => !env[name]);
+      if (missing.length) {
+        console.log("Missing settings:", missing.join(", "));
+        return json({ error: "Online ordering is not set up yet. Please call us to order.", missing }, 500);
       }
       let body;
       try {
