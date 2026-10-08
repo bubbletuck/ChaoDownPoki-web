@@ -10,9 +10,9 @@
 const SQUARE_APP_ID = "sq0idp-HGUj5EiSudlFgvdjDTO-Ig";
 const SQUARE_LOCATION_ID = "LYNQCZPJY9BPS";
 const SANDBOX = SQUARE_APP_ID.startsWith("sandbox-");
-// Turn on once chaodownpoki.com is registered for Apple Pay in the Square Developer
-// Dashboard and its file is saved here as apple-pay-domain-association.txt
-const APPLE_PAY_ON = false;
+// Apple Pay needs chaodownpoki.com registered in the Square Developer Dashboard,
+// with its file saved here as apple-pay-domain-association.txt (done)
+const APPLE_PAY_ON = true;
 
 const CART_KEY = "chaodown-cart";
 
