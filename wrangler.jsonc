@@ -9,10 +9,10 @@
   },
 
   // Settings that are safe to keep in code. These are re-applied on every deploy.
-  // Going live: change SQUARE_ENVIRONMENT to "production" and use your production location ID.
+  // Testing: SQUARE_ENVIRONMENT "sandbox" with the sandbox location ID (LYAR7RYESXPHA).
   "vars": {
-    "SQUARE_ENVIRONMENT": "sandbox",
-    "SQUARE_LOCATION_ID": "LYAR7RYESXPHA"
+    "SQUARE_ENVIRONMENT": "production",
+    "SQUARE_LOCATION_ID": "LYNQCZPJY9BPS"
   }
 
   // SQUARE_ACCESS_TOKEN is a secret: never put it in this file. Add it in the

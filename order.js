@@ -4,10 +4,11 @@
 
 // SQUARE SETTINGS. These two IDs are public and safe to have in the page.
 // The access token is secret and lives only in Cloudflare (SQUARE_ACCESS_TOKEN).
-// Going live: put your Production Application ID + Location ID here, change the
-// square.js URL in order.html, and switch the Cloudflare variables to production.
-const SQUARE_APP_ID = "sandbox-sq0idb-MlG1nF-JwifC3IhEuEXERA";
-const SQUARE_LOCATION_ID = "LYAR7RYESXPHA";
+// Testing instead: sandbox Application ID "sandbox-sq0idb-MlG1nF-JwifC3IhEuEXERA",
+// location "LYAR7RYESXPHA", the sandbox square.js URL in order.html, and the
+// sandbox Cloudflare variables.
+const SQUARE_APP_ID = "sq0idp-HGUj5EiSudlFgvdjDTO-Ig";
+const SQUARE_LOCATION_ID = "LYNQCZPJY9BPS";
 const SANDBOX = SQUARE_APP_ID.startsWith("sandbox-");
 
 const CART_KEY = "chaodown-cart";

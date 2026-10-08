@@ -23,7 +23,7 @@ export const MENU = {
   // Add dates you're closed as "YYYY-MM-DD", e.g. "2026-11-26".
   hours: {
     // false = take orders any time (for testing). Set to true to enforce the hours below.
-    enforced: false,
+    enforced: true,
     timeZone: "America/Los_Angeles",
     open: "11:00",
     close: "20:00",
