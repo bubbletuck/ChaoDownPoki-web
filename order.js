@@ -215,6 +215,9 @@ function extraUnitPrice(x) {
   return item.options ? item.options.find(o => o.id === x.option).price : item.price;
 }
 
+// Same as requiredPrompt() in src/menu.js: "a sauce", or "Whole or Cut"
+const requiredPrompt = group => group.from === "sauces" ? "a sauce" : group.items.map(c => c.name).join(" or ");
+
 // The options in one of an extra's choice groups (same as choiceItems() in src/menu.js)
 const choiceItems = group => group.from === "sauces" ? MENU.sauces : group.items;
 
@@ -231,7 +234,7 @@ function extraProblem(x) {
     const options = byId(choiceItems(group));
     if (!Array.isArray(chosen) || chosen.some(id => !options[id]) || (group.single && chosen.length > 1)) return `Choose again for ${item.name}.`;
     if (group.max && chosen.length > group.max) return `Up to ${group.max} ${group.name.toLowerCase()} for ${item.name}.`;
-    if (group.required && !chosen.length) return `Choose a ${group.name.toLowerCase()}.`;
+    if (group.required && !chosen.length) return `Choose ${requiredPrompt(group)} for ${item.name}.`;
     if (group.needs && chosen.length && !(picks[group.needs] || []).length) return "Pick a sauce first.";
   }
   return null;
@@ -325,7 +328,7 @@ function choiceControl(x, group) {
     </details>`;
   }
   return choiceItems(group).map(c =>
-    `<label class="pick"><input type="${group.single ? "radio" : "checkbox"}" name="pick-${x.id}-${group.id}" data-group="${group.id}" value="${c.id}"><span>${esc(c.name)}${badges(c)}</span></label>`
+    `<label class="pick"><input type="${group.single ? "radio" : "checkbox"}" name="pick-${x.id}-${group.id}" data-group="${group.id}" value="${c.id}" ${c.id === group.default ? "checked" : ""} data-default="${c.id === group.default}"><span>${esc(c.name)}${badges(c)}</span></label>`
   ).join("");
 }
 
@@ -418,7 +421,7 @@ function wireExtras() {
     if (extraProblem(extra)) {
       const missing = (item.choices || []).find(g => g.required && !picks[g.id]);
       if (missing) row.querySelector(`[data-group="${missing.id}"]`)?.focus();
-      return flashButton(btn, missing ? `Pick a ${missing.name.toLowerCase()}` : "Unavailable");
+      return flashButton(btn, missing ? `Pick ${requiredPrompt(missing)}` : "Unavailable");
     }
 
     // Same item again just bumps the quantity
@@ -430,7 +433,7 @@ function wireExtras() {
       cart.push(extra);
     }
     // Clear the add-ons so the next one starts fresh
-    row.querySelectorAll(".extra-choices input").forEach(i => i.checked = false);
+    row.querySelectorAll(".extra-choices input").forEach(i => i.checked = i.dataset.default === "true");
     row.querySelectorAll(".extra-choices select").forEach(s => s.value = "");
     row.querySelectorAll("details[open]").forEach(d => d.open = false);
     syncExtraRow(row);
@@ -757,6 +760,7 @@ function renderCart() {
   $("#bar-count").textContent = count;
   $("#order-bar").hidden = count === 0;
   updateTotals();
+  renderPickup();  // bigger orders take longer, so the earliest pickup moves
 }
 
 function updateTotals() {
@@ -827,10 +831,10 @@ function checkPhone(showError) {
 
 // ---------- Pickup time ----------
 
-let pickupStatus = null;  // { earliest, busy, choices } from /api/status
+let pickupStatus = null;  // { busyExtra, busy, untilClose } from /api/status
 let pickupMinutes = null; // the customer's pick
 
-const pickupLabel = m => m < 60 ? `${m} min` : m === 60 ? "1 hr" : m === 90 ? "1½ hr" : `${m / 60} hr`;
+const pickupLabel = m => m < 60 ? `${m} min` : ({ 60: "1 hr", 75: "1¼ hr", 90: "1½ hr" })[m] || `${m} min`;
 const clockIn = m => new Intl.DateTimeFormat("en-US", { timeZone: MENU.hours.timeZone, hour: "numeric", minute: "2-digit" })
   .format(new Date(Date.now() + m * 60000));
 
@@ -841,16 +845,37 @@ async function loadPickupStatus() {
     pickupStatus = await res.json();
   } catch {
     // Couldn't check how busy we are: offer the usual times; the Worker still checks
-    if (!pickupStatus) pickupStatus = { earliest: MENU.pickup.minMinutes, busy: false, choices: MENU.pickup.choices };
+    if (!pickupStatus) pickupStatus = { busyExtra: 0, busy: false, untilClose: null };
   }
   renderPickup();
 }
 
 // Pickup choices with their clock time; times too soon for a busy kitchen are greyed out
+// Same as prepMinutes() in src/menu.js: how long this order takes to make
+function prepMinutes() {
+  const p = MENU.pickup;
+  const bowls = cart.filter(x => !isExtra(x));
+  const bowlCount = bowls.reduce((a, b) => a + b.quantity, 0);
+  const itemCount = cart.filter(isExtra).reduce((a, x) => a + x.quantity, 0);
+  const cooked = bowls.some(b => SIZES[b.size].cooked || b.proteins.chicken);
+  return (cooked ? p.cookedMinutes : p.pokeMinutes)
+    + Math.max(0, bowlCount - 1) * p.extraMinutesPerBowl
+    + itemCount * p.extraMinutesPerItem;
+}
+
+// Pickup choices with their clock time. Times sooner than the order can be
+// made (bigger orders, chicken, a busy kitchen) are greyed out.
 function renderPickup() {
-  if (!pickupStatus) return;
-  const { busy: isBusy, choices } = pickupStatus;
+  if (!pickupStatus || !$("#pickup-choices")) return;
+  const { busy: isBusy, busyExtra, untilClose } = pickupStatus;
+  const prep = prepMinutes();
+  const earliest = Math.min(MENU.pickup.maxMinutes, prep + busyExtra);
+  const choices = MENU.pickup.choices.filter(m => m >= earliest && (untilClose === null || m <= untilClose));
   if (!choices.includes(pickupMinutes)) pickupMinutes = null;
+
+  $("#prep-note").textContent = cart.length
+    ? `Your order takes about ${earliest} minutes to make${isBusy ? ", including extra time because we're busy" : ""}.`
+    : "";
 
   $("#pickup-choices").innerHTML = MENU.pickup.choices.map(m => `
     <label class="pick pick-card">
@@ -862,7 +887,7 @@ function renderPickup() {
   if (!choices.length) {
     notice.textContent = "It's too close to closing time for online orders. Please call us at (916) 918-2936.";
   } else if (isBusy) {
-    notice.textContent = `We're busy right now, so the earliest pickup is about ${choices[0]} minutes. Wait times might vary. Thanks for your patience!`;
+    notice.textContent = `We're busy right now, so pickup times are a little later than usual. Wait times might vary. Thanks for your patience!`;
   }
   notice.hidden = !(isBusy || !choices.length);
 }
@@ -969,7 +994,7 @@ function wireCheckout() {
       if (data.closed) checkHours();
       // The kitchen got busier while they were checking out: show the new times
       if (data.pickupChanged) {
-        pickupStatus = { earliest: data.earliest, busy: data.busy, choices: data.choices };
+        pickupStatus = { busyExtra: data.busyExtra, busy: data.busy, untilClose: data.untilClose };
         renderPickup();
       }
       if (res.status === 409 && Number.isInteger(data.total)) {

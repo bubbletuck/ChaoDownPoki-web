@@ -1,7 +1,7 @@
 // Cloudflare Worker: Square online ordering backend + static site fallback.
 //
 // GET  /api/menu          → the ordering menu and prices (src/menu.js)
-// GET  /api/status        → { earliest, busy, choices }     → pickup times open right now
+// GET  /api/status        → { busyExtra, busy, untilClose } → how busy we are (for pickup times)
 // POST /api/quote         → { bowls, extras }               → exact subtotal, tax and total from Square
 // POST /api/create-order  → { bowls, extras, customer, pickupNote, pickupMinutes, sourceId, expectedTotal, idempotencyKey }
 //                           (refused outside the ordering hours in src/menu.js)
@@ -16,7 +16,7 @@
 
 import {
   MENU, bowlToLineItem, extraToLineItem, orderingStatus,
-  earliestPickup, pickupChoices, normalizePhone,
+  prepMinutes, busyExtraMinutes, earliestPickup, pickupChoices, minutesUntilClose, normalizePhone,
 } from "./menu.js";
 
 const SQUARE_VERSION = "2025-01-23";
@@ -117,8 +117,9 @@ async function createOrder(body, env) {
   const phone = normalizePhone(customer.phone);
   if (!phone) return json({ error: "Please enter a valid 10-digit phone number, like (916) 555-0123" }, 400);
 
-  // Pickup time: must be one of the choices open right now (busy kitchens push it back)
-  const earliest = earliestPickup(await openOrderCount(env));
+  // Pickup time: no sooner than this order takes to make, plus extra when we're busy
+  const busyExtra = busyExtraMinutes(await openOrderCount(env));
+  const earliest = earliestPickup(prepMinutes(body.bowls, body.extras), busyExtra);
   const choices = pickupChoices(earliest);
   const pickupMinutes = Number(body.pickupMinutes);
   if (!choices.length) {
@@ -126,8 +127,8 @@ async function createOrder(body, env) {
   }
   if (!choices.includes(pickupMinutes)) {
     return json({
-      error: `We just got busy, so the earliest pickup is now about ${choices[0]} minutes. Please pick a new time.`,
-      pickupChanged: true, ...statusFor(earliest),
+      error: `The earliest pickup for your order is now about ${choices[0]} minutes${busyExtra ? " because we just got busy" : ""}. Please pick a new time.`,
+      pickupChanged: true, ...statusFor(busyExtra),
     }, 409);
   }
   const pickupAt = new Date(Date.now() + pickupMinutes * 60000);
@@ -218,17 +219,18 @@ async function openOrderCount(env) {
   return busy.openOrders;
 }
 
-function statusFor(earliest) {
+// The page works out each order's earliest pickup from these
+function statusFor(busyExtra) {
   return {
-    earliest,
-    busy: earliest > MENU.pickup.minMinutes,
-    choices: pickupChoices(earliest),
+    busyExtra,
+    busy: busyExtra > 0,
+    untilClose: minutesUntilClose(),  // null when hours aren't enforced
     live: !!busy.live,  // false = couldn't check Square, so showing normal times
   };
 }
 
 async function status(env) {
-  return json(statusFor(earliestPickup(await openOrderCount(env))));
+  return json(statusFor(busyExtraMinutes(await openOrderCount(env))));
 }
 
 // "7:40 PM" in the shop's time zone

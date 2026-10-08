@@ -32,12 +32,17 @@ export const MENU = {
   },
 
   // "When will you pick up?" choices, in minutes from when the order is placed.
-  // When lots of paid online orders are still being made, the earliest time
-  // moves back automatically and the page says we're busy:
-  //   earliest = minMinutes + extraMinutesPerOrder for each order past busyAfterOrders
+  // The earliest time depends on the order, plus extra when the kitchen is busy:
+  //   start at pokeMinutes, or cookedMinutes if any teriyaki/chicken bowl or chicken scoop
+  //   + extraMinutesPerBowl for each bowl after the first
+  //   + extraMinutesPerItem for each side, soup, drink, or dessert
+  //   + extraMinutesPerOrder for each paid online order still being made past busyAfterOrders
   pickup: {
-    choices: [15, 20, 30, 45, 60, 90],
-    minMinutes: 15,
+    choices: [15, 20, 25, 30, 40, 50, 60, 75, 90],
+    pokeMinutes: 15,
+    cookedMinutes: 20,
+    extraMinutesPerBowl: 3,
+    extraMinutesPerItem: 1,
     busyAfterOrders: 4,
     extraMinutesPerOrder: 5,
     maxMinutes: 90,
@@ -94,7 +99,7 @@ export const MENU = {
     { id: "octopus-salad",  name: "Octopus Salad",  group: "Cooked" },
     { id: "shrimp",         name: "Shrimp",         group: "Cooked", prep: ["as-is", "warmed"] },
     { id: "tofu",           name: "Tofu",           group: "Cooked" },
-    { id: "tempura-shrimp", name: "Tempura Shrimp", group: "Cooked" },
+    { id: "tempura-shrimp", name: "Tempura Shrimp", group: "Cooked", prep: ["whole", "cut"] },
     { id: "chicken",        name: "Chicken",        group: "Cooked" },
     { id: "crab-salad",     name: "Crab Salad",     group: "Cooked" },
   ],
@@ -107,6 +112,8 @@ export const MENU = {
     { id: "cooked", name: "Cooked" },
     { id: "as-is",  name: "As is" },
     { id: "warmed", name: "Warmed up" },
+    { id: "whole",  name: "Whole" },
+    { id: "cut",    name: "Cut" },
   ],
 
   // Where the sauce goes. Customers pick any combination.
@@ -157,6 +164,7 @@ export const MENU = {
     { id: "crushed-peanuts", name: "Crushed Peanuts" },
     { id: "wonton-strips",  name: "Wonton Strips" },
     { id: "sesame-seeds",   name: "Sesame Seeds" },
+    { id: "roasted-sesame-seeds", name: "Roasted Sesame Seeds" },
   ],
 
   // Sides, soup, drinks, and ice cream ordered on their own.
@@ -164,7 +172,8 @@ export const MENU = {
   //   choices: free add-ons the customer can pick. Each group lists its
   //            `items`, or uses `from: "sauces"` for the whole sauce list.
   //            `single` allows one pick, `required` needs at least one,
-  //            `needs` only allows picks once that other group has some.
+  //            `needs` only allows picks once that other group has some,
+  //            `default` is picked to start with.
   //   price: null hides the item from online ordering until a price is set
   extras: [
     { id: "chaodown-fries", group: "Sides", name: "Chaodown Fries", price: 569, choices: [
@@ -183,6 +192,7 @@ export const MENU = {
       { id: "2", name: "2 pcs", price: 499 }, { id: "4", name: "4 pcs", price: 799 } ] },
     { id: "fried-wontons",  group: "Sides", name: "Deep Fried Wontons", price: 499 },
     { id: "tempura-shrimp", group: "Sides", name: "Tempura Shrimp", detail: "4 pcs", price: 900, choices: [
+      { id: "style", name: "Shrimp", items: [{ id: "whole", name: "Whole" }, { id: "cut", name: "Cut" }], single: true, required: true, default: "whole" },
       { id: "sauces", name: "Sauces", from: "sauces", max: 5 },
       SAUCE_ON_SIDE,
     ] },
@@ -266,15 +276,28 @@ export function minutesUntilClose(now = new Date()) {
 }
 
 // Earliest pickup (minutes from now) given how many orders are still being made
-export function earliestPickup(openOrders) {
+// How long this order takes to make, in minutes. order.js has a copy.
+export function prepMinutes(bowls = [], extras = []) {
   const p = MENU.pickup;
-  const extra = Math.max(0, openOrders - p.busyAfterOrders) * p.extraMinutesPerOrder;
-  return Math.min(p.maxMinutes, p.minMinutes + extra);
+  const bowlCount = bowls.reduce((a, b) => a + (Number(b.quantity) || 1), 0);
+  const itemCount = extras.reduce((a, x) => a + (Number(x.quantity) || 1), 0);
+  // Chicken takes longer: teriyaki & chicken bowls, or chicken in any bowl
+  const cooked = bowls.some(b => SIZES[b.size]?.cooked || b.proteins?.chicken);
+  return (cooked ? p.cookedMinutes : p.pokeMinutes)
+    + Math.max(0, bowlCount - 1) * p.extraMinutesPerBowl
+    + itemCount * p.extraMinutesPerItem;
 }
 
-// Pickup choices a customer can pick right now. order.js has a copy.
-export function pickupChoices(earliest, now = new Date()) {
-  const untilClose = minutesUntilClose(now);
+// Extra minutes when lots of paid online orders are still being made
+export function busyExtraMinutes(openOrders) {
+  const p = MENU.pickup;
+  return Math.max(0, openOrders - p.busyAfterOrders) * p.extraMinutesPerOrder;
+}
+
+export const earliestPickup = (prep, busyExtra) => Math.min(MENU.pickup.maxMinutes, prep + busyExtra);
+
+// Pickup choices for an order right now (none past closing time). order.js has a copy.
+export function pickupChoices(earliest, untilClose = minutesUntilClose()) {
   return MENU.pickup.choices.filter(m => m >= earliest && (untilClose === null || m <= untilClose));
 }
 
@@ -295,6 +318,9 @@ export function prepNote(protein, list) {
   if (counts.length === 1) return counts[0][0] === protein.prep[0] ? "" : ` (${PROTEIN_PREP[counts[0][0]].name})`;
   return ` (${counts.map(([h, n]) => `${n} ${PROTEIN_PREP[h].name}`).join(", ")})`;
 }
+
+// "a sauce", or "Whole or Cut" for short lists
+export const requiredPrompt = group => group.from === "sauces" ? "a sauce" : group.items.map(c => c.name).join(" or ");
 
 // The options in one of an extra's choice groups
 export const choiceItems = group => group.from === "sauces" ? MENU.sauces : group.items;
@@ -447,7 +473,7 @@ export function extraToLineItem(extra) {
     if (!Array.isArray(chosen) || new Set(chosen).size !== chosen.length || chosen.some(id => !options[id])) return { error: "Invalid choice" };
     if (group.single && chosen.length > 1) return { error: `Pick one ${group.name.toLowerCase()} for ${item.name}` };
     if (group.max && chosen.length > group.max) return { error: `Up to ${group.max} ${group.name.toLowerCase()} for ${item.name}` };
-    if (group.required && !chosen.length) return { error: `Choose a ${group.name.toLowerCase()} for ${item.name}` };
+    if (group.required && !chosen.length) return { error: `Choose ${requiredPrompt(group)} for ${item.name}` };
     if (group.needs && chosen.length && !(picks[group.needs] || []).length) return { error: `Pick a sauce for ${item.name} first` };
     for (const id of chosen) modifiers.push(modifier(`${group.name}: ${options[id].name}`));
   }
