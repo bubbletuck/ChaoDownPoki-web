@@ -1,0 +1,8 @@
+# Keep non-public files out of the static assets upload
+.git
+.claude
+src
+wrangler.jsonc
+.assetsignore
+._*
+**/._*

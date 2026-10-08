@@ -1,0 +1,14 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "chaodownpoki-web",
+  "main": "./src/index.js",
+  "compatibility_date": "2025-09-01",
+  "assets": {
+    "binding": "ASSETS",
+    "directory": "./"
+  }
+  // Secrets (set in Cloudflare dashboard → Settings → Variables and Secrets):
+  //   SQUARE_ACCESS_TOKEN  – Square access token (secret)
+  //   SQUARE_LOCATION_ID   – Square location ID
+  //   SQUARE_ENVIRONMENT   – optional, "sandbox" to use Square's sandbox API
+}
