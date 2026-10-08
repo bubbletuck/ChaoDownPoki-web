@@ -78,6 +78,14 @@ export const MENU = {
     { id: "crab-salad",     name: "Crab Salad",     group: "Cooked" },
   ],
 
+  // Where the sauce goes. Customers pick any combination.
+  saucePlacements: [
+    { id: "base",    name: "On the rice" },
+    { id: "protein", name: "Mixed with protein" },
+    { id: "top",     name: "On top" },
+    { id: "side",    name: "On the side" },
+  ],
+
   sauces: [
     { id: "chaodown",          name: "Chaodown Sauce", detail: "sweet", diet: ["gf"] },
     { id: "house",             name: "House Sauce" },
@@ -128,6 +136,7 @@ const PROTEINS = byId(MENU.proteins);
 const SAUCES = byId(MENU.sauces);
 const TOPPINGS = byId(MENU.toppings);
 const BOWL_SIDES = byId(MENU.bowlSides);
+const SAUCE_PLACEMENTS = byId(MENU.saucePlacements);
 
 // Is online ordering open right now? Returns { open, message }.
 // order.js has a copy of this so the page can show the same message.
@@ -213,6 +222,11 @@ export function bowlToLineItem(bowl) {
   const sauces = Array.isArray(bowl.sauces) ? bowl.sauces : [];
   if (new Set(sauces).size !== sauces.length || sauces.some(id => !SAUCES[id])) return { error: "Invalid sauce" };
 
+  const sauceOn = Array.isArray(bowl.sauceOn) ? bowl.sauceOn : [];
+  if (new Set(sauceOn).size !== sauceOn.length || sauceOn.some(id => !SAUCE_PLACEMENTS[id])) return { error: "Invalid sauce placement" };
+  if (sauces.length && !sauceOn.length) return { error: "Choose where you want your sauce" };
+  if (!sauces.length && sauceOn.length) return { error: "Pick a sauce first" };
+
   const toppings = Array.isArray(bowl.toppings) ? bowl.toppings : [];
   if (new Set(toppings).size !== toppings.length || toppings.some(id => !TOPPINGS[id])) return { error: "Invalid topping" };
 
@@ -225,6 +239,7 @@ export function bowlToLineItem(bowl) {
     modifiers.push(modifier(`Extra protein scoop${extraScoops > 1 ? `s ×${extraScoops}` : ""}`, extraScoops * MENU.extraScoopPrice));
   }
   for (const id of sauces) modifiers.push(modifier(`Sauce: ${SAUCES[id].name}`));
+  if (sauceOn.length) modifiers.push(modifier(`Sauce placement: ${sauceOn.map(id => SAUCE_PLACEMENTS[id].name).join(", ")}`));
   for (const id of toppings) modifiers.push(modifier(TOPPINGS[id].name, TOPPINGS[id].price || 0));
 
   const lineItem = size.cooked ? {
