@@ -6,9 +6,16 @@
   "assets": {
     "binding": "ASSETS",
     "directory": "./"
+  },
+
+  // Settings that are safe to keep in code. These are re-applied on every deploy.
+  // Going live: change SQUARE_ENVIRONMENT to "production" and use your production location ID.
+  "vars": {
+    "SQUARE_ENVIRONMENT": "sandbox",
+    "SQUARE_LOCATION_ID": "LYAR7RYESXPHA"
   }
-  // Secrets (set in Cloudflare dashboard → Settings → Variables and Secrets):
-  //   SQUARE_ACCESS_TOKEN  – Square access token (secret)
-  //   SQUARE_LOCATION_ID   – Square location ID
-  //   SQUARE_ENVIRONMENT   – optional, "sandbox" to use Square's sandbox API
+
+  // SQUARE_ACCESS_TOKEN is a secret: never put it in this file. Add it in the
+  // Cloudflare dashboard → Worker → Settings → Variables and Secrets, type "Secret".
+  // Secrets are kept across deploys.
 }
