@@ -597,6 +597,8 @@ button.btn { font: inherit; cursor: pointer; }
 .builder { display: grid; gap: 24px; }
 .step-note { color: var(--ink-soft); font-size: 0.92rem; margin: -4px 0 14px; }
 .step-note.done { color: var(--sea); font-weight: 500; }
+.half-picker { margin-top: 18px; padding-top: 4px; border-top: 1px dashed rgba(16,48,47,0.14); }
+.half-picker h4 { margin-top: 14px; }
 .builder h4:first-child { margin-top: 0; }
 
 .pick-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }

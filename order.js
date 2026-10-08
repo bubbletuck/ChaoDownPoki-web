@@ -71,7 +71,7 @@ function checkHours() {
 // ---------- Bowl helpers ----------
 
 function newBowl(size = "regular") {
-  return { size, base: null, side: null, proteins: {}, sauces: [], toppings: [], note: "", quantity: 1 };
+  return { size, base: null, halves: [], side: null, proteins: {}, sauces: [], toppings: [], note: "", quantity: 1 };
 }
 
 function scoopCount(b) {
@@ -95,6 +95,14 @@ function bowlProblem(b) {
   const size = SIZES[b.size];
   if (!size) return "Pick a bowl size.";
   if (!BASES[b.base]) return "Choose a base.";
+  const halves = b.halves || [];
+  if (BASES[b.base].split) {
+    if (halves.length !== 2 || halves[0] === halves[1] || halves.some(id => !BASES[id] || BASES[id].split)) {
+      return "Pick both halves for your Half & Half base.";
+    }
+  } else if (halves.length) {
+    return "Choose a base.";
+  }
   const ids = Object.keys(b.proteins);
   if (size.cooked) {
     if (!BOWL_SIDES[b.side]) return "Choose your side.";
@@ -120,7 +128,9 @@ function bowlTitle(b) {
 
 function bowlDetail(b) {
   const parts = [
-    BASES[b.base].name,
+    BASES[b.base].split
+      ? `${BASES[b.base].name} (${b.halves.map(id => BASES[id].name).join(" / ")})`
+      : BASES[b.base].name,
     b.side ? `with ${BOWL_SIDES[b.side].name}` : "",
     Object.entries(b.proteins).map(([id, n]) => PROTEINS[id].name + (n > 1 ? ` ×${n}` : "")).join(", "),
     b.sauces.map(id => SAUCES[id].name).join(", "),
@@ -149,6 +159,7 @@ function renderBuilder() {
       `<label class="pick pick-card"><input type="radio" name="size" value="${s.id}"><span><strong>${esc(s.name)}${badges(s)}</strong><small>${esc(s.detail)}</small><em>${fmt(s.price)}</em></span></label>`
     ).join("")}</div>`).join("");
   $("#opt-base").innerHTML = MENU.bases.map(b => pick("radio", "base", b)).join("");
+  $("#opt-halves").innerHTML = MENU.bases.filter(b => !b.split).map(b => pick("checkbox", "half", b)).join("");
   $("#opt-side").innerHTML = MENU.bowlSides.map(s => pick("radio", "side", s)).join("");
 
   const groups = [...new Set(MENU.proteins.map(p => p.group))];
@@ -174,6 +185,14 @@ function syncBuilder() {
   form.querySelectorAll('input[name="size"]').forEach(i => i.checked = i.value === bowl.size);
   form.querySelectorAll('input[name="base"]').forEach(i => i.checked = i.value === bowl.base);
   form.querySelectorAll('input[name="side"]').forEach(i => i.checked = i.value === bowl.side);
+  form.querySelectorAll('input[name="half"]').forEach(i => i.checked = bowl.halves.includes(i.value));
+
+  const split = BASES[bowl.base]?.split;
+  $("#half-picker").hidden = !split;
+  $("#half-status").textContent = bowl.halves.length === 2
+    ? `${bowl.halves.map(id => BASES[id].name).join(" + ")}. Tap another to swap.`
+    : `${bowl.halves.length} of 2 chosen.`;
+  $("#half-status").classList.toggle("done", bowl.halves.length === 2);
   form.querySelectorAll('input[name="sauce"]').forEach(i => i.checked = bowl.sauces.includes(i.value));
   form.querySelectorAll('input[name="topping"]').forEach(i => i.checked = bowl.toppings.includes(i.value));
 
@@ -235,6 +254,10 @@ function wireBuilder() {
       }
     } else if (name === "base") {
       bowl.base = value;
+      if (!BASES[value].split) bowl.halves = [];
+    } else if (name === "half") {
+      // Keep the two most recent picks, so a third tap swaps out the oldest
+      bowl.halves = checked ? [...bowl.halves, value].slice(-2) : bowl.halves.filter(id => id !== value);
     } else if (name === "side") {
       bowl.side = value;
     } else if (name === "sauce") {

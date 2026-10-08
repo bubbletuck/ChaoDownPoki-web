@@ -60,7 +60,7 @@ export const MENU = {
     { id: "brown-rice",  name: "Brown Rice" },
     { id: "spring-mix",  name: "Organic Spring Mix" },
     { id: "wonton-chips", name: "Wonton Chips" },
-    { id: "half-half",   name: "Half & Half" },
+    { id: "half-half",   name: "Half & Half", detail: "pick any two", split: true },
   ],
 
   proteins: [
@@ -173,6 +173,17 @@ export function bowlToLineItem(bowl) {
   const base = BASES[bowl.base];
   if (!base) return { error: "Pick a base" };
 
+  // Half & Half: exactly two different regular bases
+  const halves = Array.isArray(bowl.halves) ? bowl.halves : [];
+  if (base.split) {
+    if (halves.length !== 2 || halves[0] === halves[1] || halves.some(id => !BASES[id] || BASES[id].split)) {
+      return { error: "Pick both halves for your Half & Half base" };
+    }
+  } else if (halves.length) {
+    return { error: "Only Half & Half bases have halves" };
+  }
+  const baseName = base.split ? `${base.name} (${halves.map(id => BASES[id].name).join(" / ")})` : base.name;
+
   const quantity = Number(bowl.quantity ?? 1);
   if (!Number.isInteger(quantity) || quantity < 1 || quantity > MENU.maxBowlQuantity) {
     return { error: "Invalid quantity" };
@@ -205,7 +216,7 @@ export function bowlToLineItem(bowl) {
   const toppings = Array.isArray(bowl.toppings) ? bowl.toppings : [];
   if (new Set(toppings).size !== toppings.length || toppings.some(id => !TOPPINGS[id])) return { error: "Invalid topping" };
 
-  const modifiers = [modifier(`Base: ${base.name}`)];
+  const modifiers = [modifier(`Base: ${baseName}`)];
   if (side) modifiers.push(modifier(`Side: ${side.name}`));
   for (const [id, count] of proteinEntries) {
     modifiers.push(modifier(`Protein: ${PROTEINS[id].name}${count > 1 ? ` ×${count}` : ""}`));
