@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Order Online | ChaoDown Poki, Roseville CA</title>
+<meta name="description" content="Build your poke bowl and order online for pickup at ChaoDown Poki in Roseville, CA.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,700;1,9..144,500&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="icon" type="image/png" href="images/favicon.png">
+<link rel="apple-touch-icon" href="images/apple-touch-icon.png">
+<link rel="stylesheet" href="styles.css">
+<!--
+  ONLINE ORDERING
+  Prices and options live in src/menu.js (the Worker), not on this page.
+  Square settings (Application ID, Location ID) are at the top of order.js.
+-->
+</head>
+<body class="order-page">
+
+<div class="announce test-banner" id="test-banner" hidden>Test mode: no real charges. Use card 4111 1111 1111 1111, any future date, any CVV, ZIP 94103.</div>
+
+<header class="site-header">
+  <nav class="wrap nav" aria-label="Main">
+    <a href="index.html" class="logo"><span class="logo-mark"><img src="images/logo.png" alt="" onerror="this.remove()"></span>ChaoDown Poki</a>
+    <button class="menu-toggle" aria-label="Open menu" aria-expanded="false">
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+    </button>
+    <ul class="nav-links">
+      <li><a href="index.html">Home</a></li>
+      <li><a href="menu.html">Menu</a></li>
+      <li><a href="about.html">About Us</a></li>
+      <li><a href="index.html#visit">Visit</a></li>
+      <li><a href="order.html" class="btn btn-primary">Order Online</a></li>
+      <li><a href="tel:+19169182936" class="btn btn-ghost">Call</a></li>
+    </ul>
+  </nav>
+</header>
+
+<main>
+
+  <div id="ordering">
+    <div class="page-head">
+      <div class="wrap">
+        <span class="eyebrow">Order online · Pickup</span>
+        <h1>Build your bowl</h1>
+        <p class="lead">Pick everything you like, pay online, and pick it up at 1950 Douglas Blvd, Suite B-3. Open daily 11am – 8pm.</p>
+      </div>
+    </div>
+
+    <section class="order-section">
+      <div class="wrap">
+        <p class="form-msg error" id="page-error" role="alert" hidden></p>
+
+        <div class="order-layout" id="order-layout" hidden>
+
+          <!-- ================= BOWL BUILDER ================= -->
+          <form class="builder" id="builder" novalidate>
+            <div class="build-step">
+              <h3><span class="num">1</span> Pick a size</h3>
+              <div class="pick-grid" id="opt-size" role="radiogroup" aria-label="Bowl size"></div>
+            </div>
+
+            <div class="build-step">
+              <h3><span class="num">2</span> Choose your base</h3>
+              <div class="pick-row" id="opt-base" role="radiogroup" aria-label="Base"></div>
+            </div>
+
+            <div class="build-step">
+              <h3><span class="num">3</span> Pick your protein</h3>
+              <p class="step-note" id="scoop-status" aria-live="polite"></p>
+              <div id="opt-protein"></div>
+              <p class="hint">Raw proteins can be cooked or seared on request (except Spicy Tuna). Just add a note below.</p>
+            </div>
+
+            <div class="build-step">
+              <h3><span class="num">4</span> Mix a sauce in</h3>
+              <p class="step-note" id="sauce-status" aria-live="polite"></p>
+              <div class="pick-row" id="opt-sauce"></div>
+            </div>
+
+            <div class="build-step">
+              <h3><span class="num">5</span> Choose your toppings</h3>
+              <p class="step-note">As many as you like.</p>
+              <div class="pick-row" id="opt-topping"></div>
+            </div>
+
+            <div class="build-step add-step">
+              <label class="field">
+                <span>Notes for this bowl <small>(optional)</small></span>
+                <input type="text" id="bowl-note" maxlength="200" placeholder="e.g. sear the salmon, light sauce">
+              </label>
+              <div class="add-row">
+                <div class="qty" aria-label="Quantity">
+                  <button type="button" id="qty-minus" aria-label="One fewer">−</button>
+                  <output id="qty-value" aria-live="polite">1</output>
+                  <button type="button" id="qty-plus" aria-label="One more">+</button>
+                </div>
+                <button type="submit" class="btn btn-primary add-btn" id="add-btn">Add to order</button>
+              </div>
+              <p class="form-msg" id="builder-msg" role="status" hidden></p>
+            </div>
+          </form>
+
+          <!-- ================= CART + CHECKOUT ================= -->
+          <aside class="order-panel" id="checkout" aria-labelledby="checkout-title">
+            <h2 id="checkout-title">Your order</h2>
+            <p class="cart-empty" id="cart-empty">Nothing here yet. Build a bowl to get started.</p>
+            <ul class="cart-list" id="cart-list"></ul>
+
+            <dl class="totals" id="totals" hidden>
+              <dt>Subtotal</dt><dd id="t-subtotal"></dd>
+              <dt>Tax</dt><dd id="t-tax"></dd>
+              <dt class="grand">Total</dt><dd class="grand" id="t-total"></dd>
+            </dl>
+
+            <form class="checkout-form" id="checkout-form" novalidate>
+              <h3>Pickup details</h3>
+              <label class="field">
+                <span>Name for pickup</span>
+                <input type="text" id="c-name" autocomplete="name" maxlength="80" required>
+              </label>
+              <label class="field">
+                <span>Phone number</span>
+                <input type="tel" id="c-phone" autocomplete="tel" inputmode="tel" placeholder="(916) 555-0123" required>
+              </label>
+              <label class="field">
+                <span>Pickup notes <small>(optional)</small></span>
+                <textarea id="c-notes" rows="2" maxlength="500" placeholder="Allergies, utensils, anything we should know"></textarea>
+              </label>
+
+              <h3>Payment</h3>
+              <div id="card-container"></div>
+              <button type="submit" class="btn btn-primary pay-btn" id="pay-btn" disabled>Pay</button>
+              <p class="form-msg error" id="checkout-error" role="alert" hidden></p>
+              <p class="secure-note">Payments are processed securely by Square. We never see your card number.</p>
+            </form>
+          </aside>
+        </div>
+
+        <p class="advisory">* Raw fish is served raw or undercooked. Consuming raw or undercooked meats, poultry, seafood, shellfish, or eggs may increase your risk of foodborne illness. Please add any food allergies to your pickup notes.</p>
+      </div>
+    </section>
+  </div>
+
+  <!-- ================= CONFIRMATION ================= -->
+  <section class="confirmation" id="confirmation" hidden>
+    <div class="wrap">
+      <div class="confirm-card">
+        <div class="confirm-check" aria-hidden="true">✓</div>
+        <span class="eyebrow">Order received</span>
+        <h1 id="confirm-title" tabindex="-1">Thank you!</h1>
+        <p class="lead">We're making your order now. Pick it up at ChaoDown Poki, 1950 Douglas Blvd, Suite B-3, Roseville. Just give us your name at the counter.</p>
+        <ul class="cart-list" id="confirm-list"></ul>
+        <dl class="totals" id="confirm-totals"></dl>
+        <p class="confirm-meta" id="confirm-meta"></p>
+        <div class="hero-actions">
+          <a href="order.html" class="btn btn-primary">Start a new order</a>
+          <a href="https://www.google.com/maps/search/?api=1&query=ChaoDown+Poki+1950+Douglas+Blvd+B-3+Roseville+CA+95661" target="_blank" rel="noopener" class="btn btn-ghost">Get directions</a>
+        </div>
+        <p class="confirm-help">Questions about your order? Call <a href="tel:+19169182936" class="text-link">(916) 918-2936</a>.</p>
+      </div>
+    </div>
+  </section>
+
+  <a href="#checkout" class="order-bar" id="order-bar" hidden>
+    <span>View order (<span id="bar-count">0</span>)</span>
+    <strong id="bar-total"></strong>
+  </a>
+
+</main>
+
+<footer class="site-footer">
+  <div class="wrap">
+    <div class="footer-grid">
+      <div>
+        <a href="index.html" class="logo"><span class="logo-mark"><img src="images/logo.png" alt="" onerror="this.remove()"></span>ChaoDown Poki</a>
+        <p style="margin-top: 12px;">A taste of Hawaii in Roseville, Chao Family style.</p>
+        <div class="social-icons">
+          <a class="social" data-social="facebook" data-icon-only></a>
+          <a class="social" data-social="instagram" data-icon-only></a>
+          <a class="social" data-social="tiktok" data-icon-only></a>
+        </div>
+      </div>
+      <div>
+        <h4>Visit</h4>
+        <p>1950 Douglas Blvd, Suite B-3<br>Roseville, CA 95661</p>
+        <p><a href="tel:+19169182936">(916) 918-2936</a></p>
+        <p><a href="mailto:Chaodownpoki@gmail.com">Chaodownpoki@gmail.com</a></p>
+      </div>
+      <div>
+        <h4>Explore</h4>
+        <ul>
+          <li><a href="index.html">Home</a></li>
+          <li><a href="menu.html">Menu</a></li>
+          <li><a href="order.html">Order Online</a></li>
+          <li><a href="about.html">About Us</a></li>
+        </ul>
+        <p style="margin-top: 12px;">Open daily 11am – 8pm</p>
+      </div>
+    </div>
+    <div class="footer-bottom">© <span class="year"></span> ChaoDown Poki. Family owned and operated in Roseville, CA.</div>
+  </div>
+</footer>
+
+<script src="site.js"></script>
+<!-- Square Web Payments SDK. Going live: change to https://web.squarecdn.com/v1/square.js -->
+<script src="https://sandbox.web.squarecdn.com/v1/square.js"></script>
+<script src="order.js"></script>
+</body>
+</html>

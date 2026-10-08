@@ -1,15 +1,16 @@
 // Cloudflare Worker: Square online ordering backend + static site fallback.
 //
-// POST /api/create-order
-//   Body: {
-//     sourceId: "cnon:...",            // card token from Square Web Payments SDK
-//     items: [{ catalogObjectId: "...", quantity: 1, note?: "..." }],
-//     customer: { name: "...", phone?: "...", email?: "..." },
-//     pickupNote?: "..."
-//   }
+// GET  /api/menu          → the ordering menu and prices (src/menu.js)
+// POST /api/quote         → { bowls }                       → exact subtotal, tax and total from Square
+// POST /api/create-order  → { bowls, customer, pickupNote, sourceId, expectedTotal, idempotencyKey }
 //
-// Prices come from the Square catalog (catalogObjectId), never from the
-// browser, so customers can't change what they're charged.
+// A bowl looks like:
+//   { size: "regular", base: "white-rice", proteins: { salmon: 1, tuna: 1 },
+//     sauces: ["ponzu"], toppings: ["avocado"], note: "", quantity: 1 }
+//
+// Every price comes from src/menu.js. The browser only says what was picked.
+
+import { MENU, bowlToLineItem } from "./menu.js";
 
 const SQUARE_VERSION = "2025-01-23";
 
@@ -17,103 +18,155 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
 
-    if (url.pathname === "/api/create-order") {
+    if (url.pathname === "/api/menu") {
+      return json(MENU, 200, { "Cache-Control": "public, max-age=300" });
+    }
+    if (url.pathname === "/api/quote" || url.pathname === "/api/create-order") {
       if (request.method !== "POST") {
         return json({ error: "Method not allowed" }, 405, { Allow: "POST" });
       }
-      return createOrder(request, env);
+      if (!env.SQUARE_ACCESS_TOKEN || !env.SQUARE_LOCATION_ID) {
+        return json({ error: "Online ordering is not set up yet. Please call us to order." }, 500);
+      }
+      let body;
+      try {
+        body = await request.json();
+      } catch {
+        return json({ error: "Invalid JSON body" }, 400);
+      }
+      return url.pathname === "/api/quote" ? quote(body, env) : createOrder(body, env);
     }
 
     return env.ASSETS.fetch(request);
   },
 };
 
-async function createOrder(request, env) {
-  if (!env.SQUARE_ACCESS_TOKEN || !env.SQUARE_LOCATION_ID) {
-    return json({ error: "Ordering is not configured" }, 500);
+// Builds the Square order (line items + tax) from the cart, or returns { error }.
+function buildOrder(body, env) {
+  const bowls = body?.bowls;
+  if (!Array.isArray(bowls) || bowls.length === 0) return { error: "Your order is empty" };
+  if (bowls.length > MENU.maxBowlsPerOrder) return { error: "That's a big order! Please call us for catering." };
+
+  const line_items = [];
+  for (const bowl of bowls) {
+    const { lineItem, error } = bowlToLineItem(bowl);
+    if (error) return { error };
+    line_items.push(lineItem);
   }
 
-  let body;
-  try {
-    body = await request.json();
-  } catch {
-    return json({ error: "Invalid JSON body" }, 400);
-  }
+  return {
+    order: {
+      location_id: env.SQUARE_LOCATION_ID,
+      line_items,
+      taxes: [{ uid: "sales-tax", name: MENU.taxName, percentage: MENU.taxPercent, scope: "ORDER" }],
+    },
+  };
+}
 
-  const { sourceId, items, customer = {}, pickupNote } = body || {};
+function totals(order) {
+  return {
+    subtotal: order.total_money.amount - order.total_tax_money.amount,
+    tax: order.total_tax_money.amount,
+    total: order.total_money.amount,
+    currency: order.total_money.currency,
+  };
+}
+
+async function quote(body, env) {
+  const { order, error } = buildOrder(body, env);
+  if (error) return json({ error }, 400);
+
+  const res = await square(env, "/v2/orders/calculate", { order });
+  if (!res.ok) return json({ error: "Could not price your order", details: res.errors }, res.status);
+  return json(totals(res.data.order));
+}
+
+async function createOrder(body, env) {
+  const { order, error } = buildOrder(body, env);
+  if (error) return json({ error }, 400);
+
+  const { sourceId, customer = {}, pickupNote, expectedTotal, idempotencyKey } = body;
 
   if (typeof sourceId !== "string" || !sourceId) {
-    return json({ error: "Missing payment token" }, 400);
+    return json({ error: "Missing payment details" }, 400);
   }
-  if (!Array.isArray(items) || items.length === 0) {
-    return json({ error: "Cart is empty" }, 400);
-  }
-  if (typeof customer.name !== "string" || !customer.name.trim()) {
-    return json({ error: "Name is required for pickup" }, 400);
+  const name = typeof customer.name === "string" ? customer.name.trim() : "";
+  if (!name) return json({ error: "Please enter a name for pickup" }, 400);
+
+  const phoneDigits = typeof customer.phone === "string" ? customer.phone.replace(/\D/g, "") : "";
+  if (phoneDigits.length < 10 || phoneDigits.length > 15) {
+    return json({ error: "Please enter a valid phone number" }, 400);
   }
 
-  const lineItems = [];
-  for (const item of items) {
-    const qty = Number(item?.quantity);
-    if (typeof item?.catalogObjectId !== "string" || !Number.isInteger(qty) || qty < 1 || qty > 99) {
-      return json({ error: "Invalid cart item" }, 400);
-    }
-    const lineItem = { catalog_object_id: item.catalogObjectId, quantity: String(qty) };
-    if (typeof item.note === "string" && item.note.trim()) {
-      lineItem.note = item.note.trim().slice(0, 500);
-    }
-    lineItems.push(lineItem);
-  }
+  // One key per checkout attempt from the browser, so a retried request
+  // can't create a second order or charge the card twice.
+  const key = typeof idempotencyKey === "string" && /^[\w-]{16,40}$/.test(idempotencyKey)
+    ? idempotencyKey
+    : crypto.randomUUID();
 
-  const recipient = { display_name: customer.name.trim().slice(0, 255) };
-  if (typeof customer.phone === "string" && customer.phone.trim()) {
-    recipient.phone_number = customer.phone.trim();
-  }
-  if (typeof customer.email === "string" && customer.email.trim()) {
-    recipient.email_address = customer.email.trim();
-  }
-
-  const pickupDetails = { recipient, schedule_type: "ASAP" };
+  const pickupDetails = {
+    recipient: { display_name: name.slice(0, 255), phone_number: phoneDigits },
+    schedule_type: "ASAP",
+  };
   if (typeof pickupNote === "string" && pickupNote.trim()) {
     pickupDetails.note = pickupNote.trim().slice(0, 500);
   }
+  order.fulfillments = [{ type: "PICKUP", state: "PROPOSED", pickup_details: pickupDetails }];
 
   // 1. Create the order with a PICKUP fulfillment.
-  const orderRes = await square(env, "/v2/orders", {
-    idempotency_key: crypto.randomUUID(),
-    order: {
-      location_id: env.SQUARE_LOCATION_ID,
-      line_items: lineItems,
-      fulfillments: [{ type: "PICKUP", state: "PROPOSED", pickup_details: pickupDetails }],
-    },
-  });
+  const orderRes = await square(env, "/v2/orders", { idempotency_key: `${key}-order`, order });
   if (!orderRes.ok) {
-    return json({ error: "Could not create order", details: orderRes.errors }, orderRes.status);
+    return json({ error: "We couldn't create your order. Please try again.", details: orderRes.errors }, orderRes.status);
   }
-  const order = orderRes.data.order;
+  const created = orderRes.data.order;
+
+  // Never charge a different amount from the one the customer saw.
+  if (Number.isInteger(expectedTotal) && expectedTotal !== created.total_money.amount) {
+    return json({ error: "Your total changed. Please review your order and try again.", ...totals(created) }, 409);
+  }
 
   // 2. Charge the card for the order total and attach the payment to the order.
   const paymentRes = await square(env, "/v2/payments", {
-    idempotency_key: crypto.randomUUID(),
+    idempotency_key: `${key}-pay`,
     source_id: sourceId,
-    amount_money: order.total_money,
-    order_id: order.id,
+    amount_money: created.total_money,
+    order_id: created.id,
     location_id: env.SQUARE_LOCATION_ID,
     autocomplete: true,
-    buyer_email_address: recipient.email_address,
   });
   if (!paymentRes.ok) {
-    return json({ error: "Payment failed", details: paymentRes.errors, orderId: order.id }, paymentRes.status);
+    return json({ error: paymentMessage(paymentRes.errors), details: paymentRes.errors }, paymentRes.status);
   }
   const payment = paymentRes.data.payment;
 
   return json({
-    orderId: order.id,
+    orderId: created.id,
     paymentId: payment.id,
     status: payment.status,
-    total: order.total_money,
     receiptUrl: payment.receipt_url,
+    ...totals(created),
   });
+}
+
+function paymentMessage(errors = []) {
+  const code = errors[0]?.code;
+  switch (code) {
+    case "CARD_DECLINED":
+    case "GENERIC_DECLINE":
+    case "INSUFFICIENT_FUNDS":
+      return "Your card was declined. Please try another card.";
+    case "CVV_FAILURE":
+    case "INVALID_CARD":
+      return "Please check your card's security code and try again.";
+    case "ADDRESS_VERIFICATION_FAILURE":
+    case "INVALID_POSTAL_CODE":
+      return "Please check your card's ZIP code and try again.";
+    case "INVALID_EXPIRATION":
+    case "CARD_EXPIRED":
+      return "Please check your card's expiration date.";
+    default:
+      return "Payment didn't go through. Your card was not charged. Please try again.";
+  }
 }
 
 async function square(env, path, payload) {
@@ -135,6 +188,7 @@ async function square(env, path, payload) {
   if (!res.ok) {
     // Only pass Square's error codes/details to the client, not the raw response.
     const errors = (data.errors || []).map(({ code, detail, category }) => ({ code, detail, category }));
+    console.log(`Square ${path} failed`, res.status, JSON.stringify(errors));
     return { ok: false, status: res.status >= 500 ? 502 : 400, errors };
   }
   return { ok: true, data };

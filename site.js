@@ -28,23 +28,27 @@ document.querySelectorAll("[data-social]").forEach(a => {
 // Spice level: <span class="spice" data-level="1|2|3"></span>
 const SPICE_NAMES = { 1: "Mild", 2: "Spicy", 3: "Extra hot" };
 const CHILI = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17 7.2c-2.7-.4-4.6 1.6-6 4.7-1.5 3.3-3.6 6-8 7.1 4.6 3 11.6 1.6 14.6-3.2 1.8-2.9 1.9-6.4-.6-8.6z" fill="#d63b2a"/><path d="M16.6 7.4c.2-1.6 1.2-3 2.9-3.6" fill="none" stroke="#2f8a3a" stroke-width="2" stroke-linecap="round"/><path d="M14.6 8.1c1-.9 2.8-1 4 .1" fill="none" stroke="#2f8a3a" stroke-width="2" stroke-linecap="round"/></svg>';
-document.querySelectorAll(".spice").forEach(el => {
-  const level = Number(el.dataset.level) || 1;
-  el.innerHTML = CHILI.repeat(level);
-  el.setAttribute("role", "img");
-  el.setAttribute("aria-label", SPICE_NAMES[level]);
-  el.title = SPICE_NAMES[level];
-});
-
 // Diet badges: <span class="diet vg"></span>, .gf, .sf
 const DIETS = { vg: ["VG", "Vegan"], gf: ["GF", "Gluten free"], sf: ["SF", "Sugar free"] };
-document.querySelectorAll(".diet").forEach(el => {
-  const key = Object.keys(DIETS).find(k => el.classList.contains(k));
-  if (!key) return;
-  el.textContent = DIETS[key][0];
-  el.title = DIETS[key][1];
-  el.setAttribute("aria-label", DIETS[key][1]);
-});
+
+// Fills in spice + diet badges; the order page calls this again after it renders
+function decorateBadges(root = document) {
+  root.querySelectorAll(".spice").forEach(el => {
+    const level = Number(el.dataset.level) || 1;
+    el.innerHTML = CHILI.repeat(level);
+    el.setAttribute("role", "img");
+    el.setAttribute("aria-label", SPICE_NAMES[level]);
+    el.title = SPICE_NAMES[level];
+  });
+  root.querySelectorAll(".diet").forEach(el => {
+    const key = Object.keys(DIETS).find(k => el.classList.contains(k));
+    if (!key) return;
+    el.textContent = DIETS[key][0];
+    el.title = DIETS[key][1];
+    el.setAttribute("aria-label", DIETS[key][1]);
+  });
+}
+decorateBadges();
 
 // Mobile menu
 const toggle = document.querySelector(".menu-toggle");
