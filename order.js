@@ -185,7 +185,8 @@ function prepNote(protein, list) {
 function bowlTitle(b) {
   const size = SIZES[b.size];
   if (size.cooked) return `${size.name} Bowl${size.kids ? " (Kids)" : ""}`;
-  return size.id === "vegetarian" || size.id === "kids" ? size.name : `${size.name} Poke Bowl`;
+  if (size.proteins) return `${size.name} (${size.detail})`;  // e.g. "Vegetarian Bowl (2 scoops tofu)"
+  return size.id === "kids" ? size.name : `${size.name} Poke Bowl`;
 }
 
 function bowlDetail(b) {

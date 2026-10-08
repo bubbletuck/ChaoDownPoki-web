@@ -56,6 +56,7 @@ export const MENU = {
     { id: "regular",    group: "Poke bowls", name: "Regular",         detail: "2 scoops",      scoops: 2, price: 1650 },
     { id: "large",      group: "Poke bowls", name: "Large",           detail: "3 scoops",      scoops: 3, price: 1850 },
     { id: "xlarge",     group: "Poke bowls", name: "XLarge",          detail: "5 scoops",      scoops: 5, price: 2150 },
+    { id: "vegetarian-2", group: "Poke bowls", name: "Vegetarian Bowl", detail: "2 scoops tofu", scoops: 2, price: 1450, proteins: ["tofu"] },
     { id: "vegetarian", group: "Poke bowls", name: "Vegetarian Bowl", detail: "3 scoops tofu", scoops: 3, price: 1650, proteins: ["tofu"] },
     { id: "kids",       group: "Poke bowls", name: "Kids Bowl",       detail: "1 scoop",       scoops: 1, price: 1100, maxToppings: 4 },
 
@@ -396,7 +397,7 @@ export function bowlToLineItem(bowl) {
     name: `${size.name} Bowl`,
     variation_name: size.kids ? "Kids" : "Regular",
   } : {
-    name: size.id === "vegetarian" || size.id === "kids" ? size.name : "Poke Bowl",
+    name: size.proteins || size.id === "kids" ? size.name : "Poke Bowl",
     variation_name: `${size.name} (${size.detail})`,
   };
   Object.assign(lineItem, {
