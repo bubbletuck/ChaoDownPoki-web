@@ -36,7 +36,8 @@ export const MENU = {
   //   start at pokeMinutes, or cookedMinutes if any teriyaki/chicken bowl or chicken scoop
   //   + extraMinutesPerBowl for each bowl after the first
   //   + extraMinutesPerItem for each side, soup, drink, or dessert
-  //   + busy time: when busyOrders paid online orders come in within busySpanMinutes,
+  //   + busy time: when busyOrders paid online orders (still being made, not
+  //     ready or done) came in within busySpanMinutes of each other,
   //     we're busy for busyMinutes (then it ends, even if orders keep coming; only a
   //     new burst after that starts it again). While busy, extraMinutesPerOrder for
   //     the 6th order of the burst and each one after it.

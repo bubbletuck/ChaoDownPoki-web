@@ -192,9 +192,9 @@ async function createOrder(body, env) {
 
 // ---------- Busy-kitchen pickup times ----------
 
-// When recent paid online pickup orders were placed (ms), whether or not the
-// kitchen has finished them. Cached for 20s so a page full of customers
-// doesn't hammer Square.
+// When recent paid online pickup orders still being made were placed (ms).
+// Orders marked ready or done don't count. Cached for 20s so a page full of
+// customers doesn't hammer Square.
 let busy = { at: 0, live: false, orderTimes: [] };
 async function recentOrderTimes(env) {
   if (Date.now() - busy.at < 20000) return busy.orderTimes;
@@ -204,9 +204,9 @@ async function recentOrderTimes(env) {
     limit: 500,
     query: {
       filter: {
-        state_filter: { states: ["OPEN", "COMPLETED"] },
+        state_filter: { states: ["OPEN"] },
         date_time_filter: { created_at: { start_at: since } },
-        fulfillment_filter: { fulfillment_types: ["PICKUP"] },
+        fulfillment_filter: { fulfillment_types: ["PICKUP"], fulfillment_states: ["PROPOSED", "RESERVED"] },
       },
       sort: { sort_field: "CREATED_AT", sort_order: "DESC" },
     },
