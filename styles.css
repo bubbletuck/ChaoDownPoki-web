@@ -601,6 +601,12 @@ button.btn { font: inherit; cursor: pointer; }
 .half-picker h4 { margin-top: 14px; }
 .order-main { display: grid; gap: 24px; min-width: 0; }
 
+/* Extra protein scoops cost more: show the price on each protein */
+.counter-chip .cc-price { display: none; color: var(--coral-dark); font-weight: 700; }
+.paid .counter-chip .cc-price { display: inline; }
+.counter-chip.has .cc-price { color: var(--mango); }
+.step-note.paid { color: var(--coral-dark); font-weight: 500; }
+
 .prep-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; padding: 8px 0; }
 .prep-name { font-weight: 700; min-width: 96px; }
 

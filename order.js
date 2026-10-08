@@ -106,7 +106,6 @@ function bowlProblem(b) {
   const ids = Object.keys(b.proteins);
   if (size.cooked) {
     if (!BOWL_SIDES[b.side]) return "Choose your side.";
-    if (ids.length) return "Pick your bowl again.";
   } else if (b.side) {
     return "Pick your bowl again.";
   }
@@ -137,6 +136,7 @@ function bowlDetail(b) {
       ? `${BASES[b.base].name} (${b.halves.map(id => BASES[id].name).join(" / ")})`
       : BASES[b.base].name,
     b.side ? `with ${BOWL_SIDES[b.side].name}` : "",
+    (SIZES[b.size].cooked && scoopCount(b) ? "Extra protein: " : "") +
     Object.entries(b.proteins).map(([id, n]) =>
       PROTEINS[id].name + (n > 1 ? ` ×${n}` : "") + (b.prep?.[id] ? ` (${PROTEIN_PREP[b.prep[id]].name.toLowerCase()})` : "")
     ).join(", "),
@@ -210,7 +210,7 @@ function renderBuilder() {
     <div class="pick-row">${MENU.proteins.filter(p => p.group === g).map(p => `
       <span class="counter-chip" data-protein="${p.id}">
         <button type="button" class="cc-add" data-add="${p.id}" aria-label="Add a scoop of ${esc(p.name)}">
-          ${esc(p.name)}${p.raw ? "*" : ""}${p.detail ? ` <small>${esc(p.detail)}</small>` : ""}${badges(p)} <b class="cc-count"></b>
+          ${esc(p.name)}${p.raw ? "*" : ""}${p.detail ? ` <small>${esc(p.detail)}</small>` : ""}${badges(p)} <small class="cc-price">+${fmt(MENU.extraScoopPrice)}</small> <b class="cc-count"></b>
         </button>
         <button type="button" class="cc-remove" data-remove="${p.id}" aria-label="Remove a scoop of ${esc(p.name)}">−</button>
       </span>`).join("")}
@@ -316,12 +316,15 @@ function syncBuilder() {
   $("#sauce-on-picker").hidden = bowl.sauces.length === 0;
   form.querySelectorAll('input[name="topping"]').forEach(i => i.checked = bowl.toppings.includes(i.value));
 
-  // Cooked bowls swap the protein step for the included side
+  // Cooked bowls add the included side; protein becomes optional, paid extras
   $("#step-side").hidden = !size.cooked;
-  $("#step-protein").hidden = !!size.cooked;
+  $("#protein-num").textContent = size.cooked ? "+" : "3";
+  $("#protein-title").textContent = size.cooked ? "Add extra protein (optional)" : "Pick your protein";
 
   const scoops = scoopCount(bowl);
   const extra = Math.max(0, scoops - includedScoops(size));
+  // Show "+$4.00" on every protein once the next scoop would cost extra
+  $("#step-protein").classList.toggle("paid", scoops >= includedScoops(size));
   form.querySelectorAll(".counter-chip").forEach(chip => {
     const id = chip.dataset.protein;
     const n = bowl.proteins[id] || 0;
@@ -343,14 +346,18 @@ function syncBuilder() {
   $("#prep-picker").hidden = !anyPrep;
 
   const status = $("#scoop-status");
-  if (size.proteins) {
+  status.classList.toggle("paid", !!size.cooked);
+  if (size.cooked) {
+    status.textContent = `Your ${size.name.toLowerCase()} is already included. Want more? Add any protein for an extra ${fmt(MENU.extraScoopPrice)} per scoop.` +
+      (scoops ? ` You've added ${scoops} (+${fmt(extra * MENU.extraScoopPrice)}).` : "");
+  } else if (size.proteins) {
     status.textContent = `${size.name} comes with ${size.scoops} scoops of ${size.proteins.map(id => PROTEINS[id].name).join(", ")}. Extra scoops are ${fmt(MENU.extraScoopPrice)} each.`;
   } else if (scoops < size.scoops) {
     status.textContent = `${scoops} of ${size.scoops} scoops chosen. Tap a protein to add a scoop. Pick one twice for a double scoop.`;
   } else {
     status.textContent = `${size.scoops} of ${size.scoops} scoops chosen` + (extra ? ` + ${extra} extra (${fmt(extra * MENU.extraScoopPrice)}).` : `. Extra scoops are ${fmt(MENU.extraScoopPrice)} each.`);
   }
-  status.classList.toggle("done", scoops >= size.scoops);
+  status.classList.toggle("done", !size.cooked && scoops >= size.scoops);
 
   $("#qty-value").textContent = bowl.quantity;
   $("#qty-minus").disabled = bowl.quantity <= 1;

@@ -32,8 +32,8 @@ export const MENU = {
   maxBowlsPerOrder: 30,
 
   // Every bowl you can order. Poke bowls pick their own protein scoops.
-  // Cooked bowls come with their protein, so customers only pick a base,
-  // sauces, toppings, and the included side.
+  // Cooked bowls come with their protein; customers pick a base, sauces, toppings,
+  // the included side, and can add any protein as extra scoops (extraScoopPrice each).
   sizes: [
     { id: "regular",    group: "Poke bowls", name: "Regular",         detail: "2 scoops",      scoops: 2, price: 1650 },
     { id: "large",      group: "Poke bowls", name: "Large",           detail: "3 scoops",      scoops: 3, price: 1850 },
@@ -235,9 +235,8 @@ export function bowlToLineItem(bowl) {
     return { error: "Invalid quantity" };
   }
 
-  // Proteins: { proteinId: scoops }. Cooked bowls come with theirs.
+  // Proteins: { proteinId: scoops }. Cooked bowls include none, so every scoop on them is extra.
   const proteinEntries = Object.entries(bowl.proteins || {});
-  if (size.cooked && proteinEntries.length) return { error: `${size.name} comes with its protein` };
 
   // The included side, only on cooked bowls
   const side = size.cooked ? BOWL_SIDES[bowl.side] : null;
@@ -277,7 +276,7 @@ export function bowlToLineItem(bowl) {
   if (side) modifiers.push(modifier(`Side: ${side.name}`));
   for (const [id, count] of proteinEntries) {
     const how = prep[id] && prep[id] !== MENU.proteinPrep[0].id ? ` (${PROTEIN_PREP[prep[id]].name})` : "";
-    modifiers.push(modifier(`Protein: ${PROTEINS[id].name}${count > 1 ? ` ×${count}` : ""}${how}`));
+    modifiers.push(modifier(`${size.cooked ? "Add protein" : "Protein"}: ${PROTEINS[id].name}${count > 1 ? ` ×${count}` : ""}${how}`));
   }
   if (extraScoops > 0) {
     modifiers.push(modifier(`Extra protein scoop${extraScoops > 1 ? `s ×${extraScoops}` : ""}`, extraScoops * MENU.extraScoopPrice));
