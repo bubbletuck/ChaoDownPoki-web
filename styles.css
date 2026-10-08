@@ -647,6 +647,59 @@ button.btn { font: inherit; cursor: pointer; }
 .choice-label small { font-weight: 400; color: var(--ink-soft); }
 .choice-group .pick > span { padding: 5px 12px; font-size: 0.86rem; }
 
+/* Sauce dropdowns on sides */
+.choice-group select,
+.multi-select summary {
+  font: inherit;
+  font-size: 0.88rem;
+  color: var(--ink);
+  background: var(--white);
+  border: 1px solid rgba(16,48,47,0.2);
+  border-radius: 999px;
+  padding: 6px 14px;
+  max-width: 100%;
+  cursor: pointer;
+}
+.multi-select { position: relative; max-width: 100%; }
+.multi-select summary {
+  list-style: none;
+  display: block;
+  position: relative;
+  padding-right: 34px;
+  min-width: 170px;
+  max-width: 280px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.multi-select summary::-webkit-details-marker { display: none; }
+.multi-select summary::after { content: "\25BE"; position: absolute; right: 14px; top: 50%; transform: translateY(-50%); }
+.multi-select[open] summary, .choice-group select:focus { border-color: var(--ink); }
+.multi-select.has summary { background: var(--ink); color: var(--cream); border-color: var(--ink); }
+.multi-select summary:focus-visible { outline: 3px solid var(--mango); outline-offset: 2px; }
+.ms-panel {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 6px);
+  left: 0;
+  width: max-content;
+  min-width: 240px;
+  max-width: min(320px, calc(100vw - 40px));
+  max-height: 320px;
+  overflow-y: auto;
+  display: grid;
+  gap: 2px;
+  padding: 8px;
+  background: var(--white);
+  border-radius: 14px;
+  box-shadow: 0 16px 40px rgba(16,48,47,0.2);
+}
+.ms-option { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 10px; cursor: pointer; font-size: 0.92rem; }
+.ms-option:hover { background: var(--cream); }
+.ms-option input { width: 18px; height: 18px; flex: none; accent-color: var(--coral); }
+.ms-done { position: sticky; bottom: 0; margin-top: 6px; justify-content: center; }
+.prep-name small { color: var(--ink-soft); font-weight: 400; }
+
 /* ---------- Order page sidebar ---------- */
 .order-page .wrap { max-width: 1320px; }
 .cat-nav { position: sticky; top: 96px; }

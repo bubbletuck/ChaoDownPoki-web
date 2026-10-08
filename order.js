@@ -152,7 +152,9 @@ function bowlProblem(b) {
   const included = includedScoops(size);
   if (scoops < included) return `Pick ${included - scoops} more scoop${included - scoops > 1 ? "s" : ""} of protein.`;
   if (scoops - included > MENU.maxExtraScoops) return `Up to ${MENU.maxExtraScoops} extra scoops per bowl.`;
-  if (Object.entries(b.prep || {}).some(([id, how]) => !b.proteins[id] || !PROTEINS[id].prep?.includes(how))) return "Pick how you want your protein again.";
+  if (Object.entries(b.prep || {}).some(([id, list]) =>
+    !b.proteins[id] || !PROTEINS[id].prep || !Array.isArray(list) || list.length !== b.proteins[id] || list.some(h => !PROTEINS[id].prep.includes(h))
+  )) return "Pick how you want your protein again.";
   if (b.sauces.some(id => !SAUCES[id])) return "Pick your sauces again.";
   const sauceOn = b.sauceOn || [];
   if (sauceOn.some(id => !SAUCE_PLACEMENTS[id])) return "Choose where you want your sauce again.";
@@ -160,6 +162,14 @@ function bowlProblem(b) {
   if (!b.sauces.length && sauceOn.length) return "Pick a sauce first.";
   if (b.toppings.some(id => !TOPPINGS[id])) return "Pick your toppings again.";
   return null;
+}
+
+// Same as prepNote() in src/menu.js: " (Seared)" or " (1 Raw, 2 Seared)"
+function prepNote(protein, list) {
+  if (!protein.prep || !Array.isArray(list) || !list.length) return "";
+  const counts = protein.prep.map(h => [h, list.filter(x => x === h).length]).filter(([, n]) => n);
+  if (counts.length === 1) return counts[0][0] === protein.prep[0] ? "" : ` (${PROTEIN_PREP[counts[0][0]].name})`;
+  return ` (${counts.map(([h, n]) => `${n} ${PROTEIN_PREP[h].name}`).join(", ")})`;
 }
 
 function bowlTitle(b) {
@@ -176,7 +186,7 @@ function bowlDetail(b) {
     b.side ? `with ${BOWL_SIDES[b.side].name}` : "",
     (SIZES[b.size].cooked && scoopCount(b) ? "Extra protein: " : "") +
     Object.entries(b.proteins).map(([id, n]) =>
-      PROTEINS[id].name + (n > 1 ? ` ×${n}` : "") + (b.prep?.[id] ? ` (${PROTEIN_PREP[b.prep[id]].name.toLowerCase()})` : "")
+      PROTEINS[id].name + (n > 1 ? ` ×${n}` : "") + prepNote(PROTEINS[id], b.prep?.[id])
     ).join(", "),
     b.sauces.length ? b.sauces.map(id => SAUCES[id].name).join(", ") + ` (${b.sauceOn.map(id => SAUCE_PLACEMENTS[id].name.toLowerCase()).join(", ")})` : "",
     b.toppings.map(id => TOPPINGS[id].name).join(", "),
@@ -210,6 +220,7 @@ function extraProblem(x) {
     const options = byId(choiceItems(group));
     if (!Array.isArray(chosen) || chosen.some(id => !options[id]) || (group.single && chosen.length > 1)) return `Choose again for ${item.name}.`;
     if (group.required && !chosen.length) return `Choose a ${group.name.toLowerCase()}.`;
+    if (group.needs && chosen.length && !(picks[group.needs] || []).length) return "Pick a sauce first.";
   }
   return null;
 }
@@ -225,7 +236,7 @@ function extraDetail(x) {
   const picked = (item.choices || [])
     .map(group => {
       const options = byId(choiceItems(group));
-      return (x.picks?.[group.id] || []).map(id => options[id].name).join(", ");
+      return (x.picks?.[group.id] || []).map(id => group.needs ? `${group.name} ${options[id].name.toLowerCase()}` : options[id].name).join(", ");
     })
     .filter(Boolean);
   return [item.detail, ...picked].filter(Boolean).join(" · ");
@@ -274,20 +285,49 @@ function renderBuilder() {
       </span>`).join("")}
     </div>`).join("");
 
-  // One prep row (Raw / Seared / Cooked, or As is / Warmed up) per protein that has
-  // choices, shown once it's in the bowl
-  $("#opt-prep").innerHTML = MENU.proteins.filter(p => p.prep).map(p => `
-    <div class="prep-row" data-prep-row="${p.id}" hidden>
-      <span class="prep-name">${esc(p.name)}</span>
-      <div class="pick-row" role="radiogroup" aria-label="How to prepare ${esc(p.name)}">${p.prep.map(id =>
-        `<label class="pick"><input type="radio" name="prep-${p.id}" value="${id}"><span>${esc(PROTEIN_PREP[id].name)}</span></label>`
-      ).join("")}</div>
-    </div>`).join("");
-
   $("#opt-sauce").innerHTML = MENU.sauces.map(s => pick("checkbox", "sauce", s)).join("");
   $("#opt-sauce-on").innerHTML = MENU.saucePlacements.map(p => pick("checkbox", "sauce-on", p)).join("");
   $("#opt-topping").innerHTML = MENU.toppings.map(t => pick("checkbox", "topping", t)).join("");
   decorateBadges($("#builder"));
+}
+
+// Sauces get a dropdown (pick one, or tick several); short lists stay as chips
+function choiceControl(x, group) {
+  const label = `${esc(x.name)} ${esc(group.name.toLowerCase())}`;
+  if (group.from === "sauces" && group.single) {
+    return `<select data-group="${group.id}" aria-label="${label}">
+      <option value="">Choose a sauce</option>
+      ${MENU.sauces.map(s => `<option value="${s.id}">${esc(s.name)}</option>`).join("")}
+    </select>`;
+  }
+  if (group.from === "sauces") {
+    return `<details class="multi-select" data-ms="${group.id}">
+      <summary aria-label="${label}"><span class="ms-summary">Choose sauces</span></summary>
+      <div class="ms-panel">
+        ${MENU.sauces.map(s =>
+          `<label class="ms-option"><input type="checkbox" data-group="${group.id}" value="${s.id}"><span>${esc(s.name)}${badges(s)}</span></label>`
+        ).join("")}
+        <button type="button" class="btn btn-primary btn-sm ms-done">Done</button>
+      </div>
+    </details>`;
+  }
+  return choiceItems(group).map(c =>
+    `<label class="pick"><input type="${group.single ? "radio" : "checkbox"}" name="pick-${x.id}-${group.id}" data-group="${group.id}" value="${c.id}"><span>${esc(c.name)}${badges(c)}</span></label>`
+  ).join("");
+}
+
+// Updates a side's dropdown labels and shows "Sauce on the side" only once a sauce is picked
+function syncExtraRow(row) {
+  row.querySelectorAll("details[data-ms]").forEach(d => {
+    const names = [...d.querySelectorAll("input:checked")].map(i => SAUCES[i.value].name);
+    d.querySelector(".ms-summary").textContent = names.length ? names.join(", ") : "Choose sauces";
+    d.classList.toggle("has", names.length > 0);
+  });
+  row.querySelectorAll("[data-needs]").forEach(label => {
+    const has = [...row.querySelectorAll(`[data-group="${label.dataset.needs}"]`)].some(el => el.tagName === "SELECT" ? el.value : el.checked);
+    label.hidden = !has;
+    if (!has) label.querySelector("input").checked = false;
+  });
 }
 
 // Lists one sidebar category's extras, each with its sizes, add-ons, and Add button
@@ -300,12 +340,15 @@ function renderExtras(cat) {
   $("#opt-extras").innerHTML = items.map(x => {
     const options = (x.options || []).filter(o => Number.isInteger(o.price));
     const price = options.length ? options.map(o => fmt(o.price)).join(" / ") : fmt(x.price);
-    const choices = (x.choices || []).map(group => `
+    // A group that `needs` another (like "Sauce on the side") sits in that group's row
+    const groups = x.choices || [];
+    const choices = groups.filter(g => !g.needs).map(group => `
       <div class="choice-group" role="group" aria-label="${esc(x.name)} ${esc(group.name)}">
         <span class="choice-label">${esc(group.name)}${group.required ? "" : " <small>(optional)</small>"}</span>
-        ${choiceItems(group).map(c =>
-          `<label class="pick"><input type="${group.single ? "radio" : "checkbox"}" name="pick-${x.id}-${group.id}" data-group="${group.id}" value="${c.id}"><span>${esc(c.name)}${badges(c)}</span></label>`
-        ).join("")}
+        ${choiceControl(x, group)}
+        ${groups.filter(c => c.needs === group.id).map(child => child.items.map(c =>
+          `<label class="pick" data-needs="${group.id}" hidden><input type="checkbox" data-group="${child.id}" value="${c.id}"><span>${esc(child.name)} ${esc(c.name.toLowerCase())}</span></label>`
+        ).join("")).join("")}
       </div>`).join("");
     return `
     <li class="extra-row" data-extra="${x.id}">
@@ -335,7 +378,8 @@ function wireExtras() {
     // Picked add-ons, in menu order so identical picks match
     const picks = {};
     for (const group of item.choices || []) {
-      const chosen = [...row.querySelectorAll(`input[data-group="${group.id}"]:checked`)].map(i => i.value);
+      const chosen = [...row.querySelectorAll(`[data-group="${group.id}"]`)]
+        .flatMap(el => el.tagName === "SELECT" ? (el.value ? [el.value] : []) : (el.checked ? [el.value] : []));
       if (chosen.length) picks[group.id] = chosen;
     }
     const extra = {
@@ -347,7 +391,7 @@ function wireExtras() {
     };
     if (extraProblem(extra)) {
       const missing = (item.choices || []).find(g => g.required && !picks[g.id]);
-      if (missing) row.querySelector(`input[data-group="${missing.id}"]`)?.focus();
+      if (missing) row.querySelector(`[data-group="${missing.id}"]`)?.focus();
       return flashButton(btn, missing ? `Pick a ${missing.name.toLowerCase()}` : "Unavailable");
     }
 
@@ -361,8 +405,31 @@ function wireExtras() {
     }
     // Clear the add-ons so the next one starts fresh
     row.querySelectorAll(".extra-choices input").forEach(i => i.checked = false);
+    row.querySelectorAll(".extra-choices select").forEach(s => s.value = "");
+    row.querySelectorAll("details[open]").forEach(d => d.open = false);
+    syncExtraRow(row);
     cartChanged();
     flashButton(btn, "Added ✓");
+  });
+
+  $("#opt-extras").addEventListener("change", e => {
+    const row = e.target.closest(".extra-row");
+    if (row) syncExtraRow(row);
+  });
+  $("#opt-extras").addEventListener("click", e => {
+    const done = e.target.closest(".ms-done");
+    if (done) done.closest("details").open = false;
+  });
+  // Close an open sauce dropdown when tapping elsewhere or pressing Escape
+  document.addEventListener("click", e => {
+    document.querySelectorAll("details.multi-select[open]").forEach(d => { if (!d.contains(e.target)) d.open = false; });
+  });
+  document.addEventListener("keydown", e => {
+    if (e.key !== "Escape") return;
+    document.querySelectorAll("details.multi-select[open]").forEach(d => {
+      d.open = false;
+      d.querySelector("summary").focus();
+    });
   });
 }
 
@@ -412,15 +479,7 @@ function syncBuilder() {
     chip.querySelector(".cc-remove").disabled = locked;
   });
 
-  let anyPrep = false;
-  form.querySelectorAll(".prep-row").forEach(row => {
-    const id = row.dataset.prepRow;
-    row.hidden = !bowl.proteins[id];
-    anyPrep = anyPrep || !row.hidden;
-    const how = bowl.prep[id] || PROTEINS[id].prep[0];
-    row.querySelectorAll("input").forEach(i => i.checked = i.value === how);
-  });
-  $("#prep-picker").hidden = !anyPrep;
+  syncPrep();
 
   const status = $("#scoop-status");
   status.classList.toggle("paid", !!size.cooked);
@@ -443,6 +502,31 @@ function syncBuilder() {
   $("#add-btn").textContent = `Add to order · ${fmt(bowlPrice(bowl))}`;
 }
 
+// "How do you want it?": one Raw / Seared / Cooked (or As is / Warmed up) row per
+// scoop, so 3 scoops of salmon can be 1 raw, 1 seared, 1 cooked
+let prepLayout = "";
+function syncPrep() {
+  bowl.prep = normalizePrep(bowl);
+  const ids = Object.keys(bowl.prep).filter(id => bowl.proteins[id]);
+  // Only rebuild when scoops change, so picking a prep doesn't lose keyboard focus
+  const layout = ids.map(id => `${id}:${bowl.prep[id].length}`).join(",");
+  if (layout !== prepLayout) {
+    prepLayout = layout;
+    $("#opt-prep").innerHTML = ids.map(id => {
+      const p = PROTEINS[id];
+      return bowl.prep[id].map((_, i) => `
+        <div class="prep-row">
+          <span class="prep-name">${esc(p.name)}${bowl.prep[id].length > 1 ? ` <small>scoop ${i + 1}</small>` : ""}</span>
+          <div class="pick-row" role="radiogroup" aria-label="How to prepare ${esc(p.name)}${bowl.prep[id].length > 1 ? `, scoop ${i + 1}` : ""}">${p.prep.map(h =>
+            `<label class="pick"><input type="radio" name="prep-${id}-${i}" data-prep-id="${id}" data-prep-idx="${i}" value="${h}"><span>${esc(PROTEIN_PREP[h].name)}</span></label>`
+          ).join("")}</div>
+        </div>`).join("");
+    }).join("");
+  }
+  $("#opt-prep").querySelectorAll("input").forEach(i => i.checked = bowl.prep[i.dataset.prepId][Number(i.dataset.prepIdx)] === i.value);
+  $("#prep-picker").hidden = ids.length === 0;
+}
+
 function builderMessage(text, kind) {
   const el = $("#builder-msg");
   el.textContent = text;
@@ -459,7 +543,6 @@ function wireBuilder() {
       const wasLocked = SIZES[bowl.size].proteins;
       const size = SIZES[value];
       bowl.size = value;
-      bowl.prep = {};
       if (size.cooked) {
         bowl.proteins = {};
       } else {
@@ -475,10 +558,9 @@ function wireBuilder() {
       bowl.halves = checked ? [...bowl.halves, value].slice(-2) : bowl.halves.filter(id => id !== value);
     } else if (name === "side") {
       bowl.side = value;
-    } else if (name.startsWith("prep-")) {
-      const id = name.slice(5);
-      if (value === PROTEINS[id].prep[0]) delete bowl.prep[id];
-      else bowl.prep[id] = value;
+    } else if (e.target.dataset.prepId) {
+      // One scoop's prep, e.g. the 2nd scoop of salmon → seared
+      bowl.prep[e.target.dataset.prepId][Number(e.target.dataset.prepIdx)] = value;
     } else if (name === "sauce") {
       bowl.sauces = checked ? [...bowl.sauces, value] : bowl.sauces.filter(id => id !== value);
       // Start with "mixed with protein"; clear placement when no sauce is left
@@ -501,9 +583,12 @@ function wireBuilder() {
     if (add) {
       const id = add.dataset.add;
       bowl.proteins[id] = (bowl.proteins[id] || 0) + 1;
+      // Each new scoop starts with the default prep (raw fish, shrimp as is)
+      if (PROTEINS[id].prep) (bowl.prep[id] ||= []).push(PROTEINS[id].prep[0]);
     } else if (remove) {
       const id = remove.dataset.remove;
       if (!bowl.proteins[id]) return;
+      bowl.prep[id]?.pop();
       if (--bowl.proteins[id] <= 0) {
         delete bowl.proteins[id];
         delete bowl.prep[id];
@@ -541,6 +626,22 @@ function saveCart() {
   try { localStorage.setItem(CART_KEY, JSON.stringify(cart)); } catch {}
 }
 
+// One prep entry per scoop for every protein that has prep choices. Also upgrades
+// carts saved before per-scoop prep (one "seared" per protein, or none).
+function normalizePrep(b) {
+  const prep = {};
+  for (const [id, n] of Object.entries(b.proteins)) {
+    const p = PROTEINS[id];
+    if (!p?.prep) continue;
+    const old = b.prep?.[id];
+    const list = Array.isArray(old) ? old.slice(0, n) : [];
+    const fill = typeof old === "string" ? old : p.prep[0];
+    while (list.length < n) list.push(fill);
+    prep[id] = list;
+  }
+  return prep;
+}
+
 function loadCart() {
   try {
     const saved = JSON.parse(localStorage.getItem(CART_KEY) || "[]");
@@ -549,7 +650,7 @@ function loadCart() {
     // Fill in fields added after a cart may have been saved
     const bowls = saved
       .filter(b => b && !isExtra(b) && SIZES[b.size] && b.proteins && Array.isArray(b.sauces) && Array.isArray(b.toppings))
-      .map(b => ({ ...b, prep: b.prep || {}, halves: b.halves || [], sauceOn: b.sauceOn || (b.sauces.length ? ["protein"] : []) }))
+      .map(b => ({ ...b, prep: normalizePrep(b), halves: b.halves || [], sauceOn: b.sauceOn || (b.sauces.length ? ["protein"] : []) }))
       .filter(b => !bowlProblem(b));
     return [...bowls, ...extras];
   } catch {

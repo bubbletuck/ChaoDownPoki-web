@@ -7,6 +7,9 @@
 
 const FISH_PREP = ["raw", "seared", "cooked"];
 
+// "Sauce on the side" toggle for extras that come with sauces
+const SAUCE_ON_SIDE = { id: "sauce-side", name: "Sauce", items: [{ id: "on-side", name: "On the side" }], needs: "sauces" };
+
 export const MENU = {
   currency: "USD",
 
@@ -144,11 +147,13 @@ export const MENU = {
   //   options: sizes to pick from, each with its own price
   //   choices: free add-ons the customer can pick. Each group lists its
   //            `items`, or uses `from: "sauces"` for the whole sauce list.
-  //            `single` allows one pick, `required` needs at least one.
+  //            `single` allows one pick, `required` needs at least one,
+  //            `needs` only allows picks once that other group has some.
   //   price: null hides the item from online ordering until a price is set
   extras: [
     { id: "chaodown-fries", group: "Sides", name: "Chaodown Fries", price: 569, choices: [
       { id: "sauces", name: "Sauces", from: "sauces" },
+      SAUCE_ON_SIDE,
       { id: "toppings", name: "Toppings", items: [{ id: "green-onions", name: "Green Onions" }] },
     ] },
     { id: "miso-soup",      group: "Sides", name: "Miso Soup", price: 400, choices: [
@@ -163,6 +168,7 @@ export const MENU = {
     { id: "fried-wontons",  group: "Sides", name: "Deep Fried Wontons", price: 499 },
     { id: "tempura-shrimp", group: "Sides", name: "Tempura Shrimp", detail: "4 pcs", price: 900, choices: [
       { id: "sauces", name: "Sauces", from: "sauces" },
+      SAUCE_ON_SIDE,
     ] },
     { id: "side-sauce",     group: "Sides", name: "Side of Sauce", detail: "8 oz", price: 500, choices: [
       { id: "sauce", name: "Sauce", from: "sauces", single: true, required: true },
@@ -231,6 +237,15 @@ export function orderingStatus(now = new Date()) {
   return { open: true, message: `Taking online orders until ${label(lastOrder)} today.` };
 }
 
+// " (Seared)" or " (1 Raw, 2 Seared)" for a protein's per-scoop prep list;
+// empty when every scoop is the default. order.js has a copy for the cart.
+export function prepNote(protein, list) {
+  if (!protein.prep || !Array.isArray(list) || !list.length) return "";
+  const counts = protein.prep.map(h => [h, list.filter(x => x === h).length]).filter(([, n]) => n);
+  if (counts.length === 1) return counts[0][0] === protein.prep[0] ? "" : ` (${PROTEIN_PREP[counts[0][0]].name})`;
+  return ` (${counts.map(([h, n]) => `${n} ${PROTEIN_PREP[h].name}`).join(", ")})`;
+}
+
 // The options in one of an extra's choice groups
 export const choiceItems = group => group.from === "sauces" ? MENU.sauces : group.items;
 
@@ -284,10 +299,14 @@ export function bowlToLineItem(bowl) {
   const extraScoops = scoops - included;
   if (extraScoops > MENU.maxExtraScoops) return { error: `Up to ${MENU.maxExtraScoops} extra scoops per bowl` };
 
-  // How a protein is prepared: { proteinId: "seared" }, from that protein's `prep` list
+  // How each scoop is prepared, from that protein's `prep` list:
+  // { salmon: ["raw", "seared", "cooked"] } has one entry per scoop
   const prep = bowl.prep && typeof bowl.prep === "object" ? bowl.prep : {};
-  for (const [id, how] of Object.entries(prep)) {
-    if (!bowl.proteins?.[id] || !PROTEINS[id].prep?.includes(how)) return { error: "Invalid protein prep" };
+  for (const [id, list] of Object.entries(prep)) {
+    const p = PROTEINS[id];
+    if (!bowl.proteins?.[id] || !p.prep || !Array.isArray(list) || list.length !== bowl.proteins[id] || list.some(h => !p.prep.includes(h))) {
+      return { error: "Invalid protein prep" };
+    }
   }
 
   const sauces = Array.isArray(bowl.sauces) ? bowl.sauces : [];
@@ -304,7 +323,7 @@ export function bowlToLineItem(bowl) {
   const modifiers = [modifier(`Base: ${baseName}`)];
   if (side) modifiers.push(modifier(`Side: ${side.name}`));
   for (const [id, count] of proteinEntries) {
-    const how = prep[id] && prep[id] !== PROTEINS[id].prep[0] ? ` (${PROTEIN_PREP[prep[id]].name})` : "";
+    const how = prepNote(PROTEINS[id], prep[id]);
     modifiers.push(modifier(`${size.cooked ? "Add protein" : "Protein"}: ${PROTEINS[id].name}${count > 1 ? ` ×${count}` : ""}${how}`));
   }
   if (extraScoops > 0) {
@@ -367,6 +386,7 @@ export function extraToLineItem(extra) {
     if (!Array.isArray(chosen) || new Set(chosen).size !== chosen.length || chosen.some(id => !options[id])) return { error: "Invalid choice" };
     if (group.single && chosen.length > 1) return { error: `Pick one ${group.name.toLowerCase()} for ${item.name}` };
     if (group.required && !chosen.length) return { error: `Choose a ${group.name.toLowerCase()} for ${item.name}` };
+    if (group.needs && chosen.length && !(picks[group.needs] || []).length) return { error: `Pick a sauce for ${item.name} first` };
     for (const id of chosen) modifiers.push(modifier(`${group.name}: ${options[id].name}`));
   }
 
