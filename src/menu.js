@@ -17,6 +17,8 @@ export const MENU = {
   // `lastOrderMinutes` before closing so there's time to make them.
   // Add dates you're closed as "YYYY-MM-DD", e.g. "2026-11-26".
   hours: {
+    // false = take orders any time (for testing). Set to true to enforce the hours below.
+    enforced: false,
     timeZone: "America/Los_Angeles",
     open: "11:00",
     close: "20:00",
@@ -131,6 +133,7 @@ const BOWL_SIDES = byId(MENU.bowlSides);
 // order.js has a copy of this so the page can show the same message.
 export function orderingStatus(now = new Date()) {
   const h = MENU.hours;
+  if (!h.enforced) return { open: true, message: "" };
   const parts = Object.fromEntries(
     new Intl.DateTimeFormat("en-US", {
       timeZone: h.timeZone, year: "numeric", month: "2-digit", day: "2-digit",

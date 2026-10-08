@@ -33,6 +33,7 @@ let hours = { open: false, message: "" };
 // Same rules as orderingStatus() in src/menu.js, which the Worker enforces
 function orderingStatus(now = new Date()) {
   const h = MENU.hours;
+  if (!h.enforced) return { open: true, message: "" };
   const parts = Object.fromEntries(
     new Intl.DateTimeFormat("en-US", {
       timeZone: h.timeZone, year: "numeric", month: "2-digit", day: "2-digit",
@@ -63,7 +64,7 @@ function checkHours() {
   const el = $("#hours-notice");
   el.textContent = hours.message;
   el.classList.toggle("closed", !hours.open);
-  el.hidden = false;
+  el.hidden = !hours.message;
   updateTotals();
 }
 
