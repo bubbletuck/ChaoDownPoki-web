@@ -1,8 +1,9 @@
 // Cloudflare Worker: Square online ordering backend + static site fallback.
 //
 // GET  /api/menu          → the ordering menu and prices (src/menu.js)
+// GET  /api/status        → { earliest, busy, choices }     → pickup times open right now
 // POST /api/quote         → { bowls, extras }               → exact subtotal, tax and total from Square
-// POST /api/create-order  → { bowls, extras, customer, pickupNote, sourceId, expectedTotal, idempotencyKey }
+// POST /api/create-order  → { bowls, extras, customer, pickupNote, pickupMinutes, sourceId, expectedTotal, idempotencyKey }
 //                           (refused outside the ordering hours in src/menu.js)
 //
 // A bowl looks like:
@@ -13,7 +14,10 @@
 //
 // Every price comes from src/menu.js. The browser only says what was picked.
 
-import { MENU, bowlToLineItem, extraToLineItem, orderingStatus } from "./menu.js";
+import {
+  MENU, bowlToLineItem, extraToLineItem, orderingStatus,
+  earliestPickup, pickupChoices, normalizePhone,
+} from "./menu.js";
 
 const SQUARE_VERSION = "2025-01-23";
 
@@ -25,15 +29,16 @@ export default {
       // no-cache: browsers re-check after every deploy, so the page and prices never disagree
       return json(MENU, 200, { "Cache-Control": "no-cache" });
     }
-    if (url.pathname === "/api/quote" || url.pathname === "/api/create-order") {
-      if (request.method !== "POST") {
-        return json({ error: "Method not allowed" }, 405, { Allow: "POST" });
-      }
+    if (url.pathname === "/api/status" || url.pathname === "/api/quote" || url.pathname === "/api/create-order") {
       // Names (never values) of missing settings, to make setup problems easy to spot
       const missing = ["SQUARE_ACCESS_TOKEN", "SQUARE_LOCATION_ID"].filter(name => !env[name]);
       if (missing.length) {
         console.log("Missing settings:", missing.join(", "));
         return json({ error: "Online ordering is not set up yet. Please call us to order.", missing }, 500);
+      }
+      if (url.pathname === "/api/status") return status(env);
+      if (request.method !== "POST") {
+        return json({ error: "Method not allowed" }, 405, { Allow: "POST" });
       }
       let body;
       try {
@@ -109,10 +114,24 @@ async function createOrder(body, env) {
   const name = typeof customer.name === "string" ? customer.name.trim() : "";
   if (!name) return json({ error: "Please enter a name for pickup" }, 400);
 
-  const phoneDigits = typeof customer.phone === "string" ? customer.phone.replace(/\D/g, "") : "";
-  if (phoneDigits.length < 10 || phoneDigits.length > 15) {
-    return json({ error: "Please enter a valid phone number" }, 400);
+  const phone = normalizePhone(customer.phone);
+  if (!phone) return json({ error: "Please enter a valid 10-digit phone number, like (916) 555-0123" }, 400);
+
+  // Pickup time: must be one of the choices open right now (busy kitchens push it back)
+  const earliest = earliestPickup(await openOrderCount(env));
+  const choices = pickupChoices(earliest);
+  const pickupMinutes = Number(body.pickupMinutes);
+  if (!choices.length) {
+    return json({ error: "It's too close to closing time for online orders. Please call us.", closed: true }, 403);
   }
+  if (!choices.includes(pickupMinutes)) {
+    return json({
+      error: `We just got busy, so the earliest pickup is now about ${choices[0]} minutes. Please pick a new time.`,
+      pickupChanged: true, ...statusFor(earliest),
+    }, 409);
+  }
+  const pickupAt = new Date(Date.now() + pickupMinutes * 60000);
+  const pickupTime = clockTime(pickupAt);
 
   // One key per checkout attempt from the browser, so a retried request
   // can't create a second order or charge the card twice.
@@ -120,14 +139,17 @@ async function createOrder(body, env) {
     ? idempotencyKey
     : crypto.randomUUID();
 
+  // A scheduled pickup shows the time on Square's order screen; the ticket name
+  // ("Maria @ 7:40 PM") makes it easy to match orders to customers at the counter.
+  const note = typeof pickupNote === "string" ? pickupNote.trim() : "";
   const pickupDetails = {
-    recipient: { display_name: name.slice(0, 255), phone_number: phoneDigits },
-    schedule_type: "ASAP",
+    recipient: { display_name: name.slice(0, 255), phone_number: phone },
+    schedule_type: "SCHEDULED",
+    pickup_at: pickupAt.toISOString(),
+    note: `Pickup ~${pickupTime} (ordered for ${pickupMinutes} min).${note ? " " + note : ""}`.slice(0, 500),
   };
-  if (typeof pickupNote === "string" && pickupNote.trim()) {
-    pickupDetails.note = pickupNote.trim().slice(0, 500);
-  }
   order.fulfillments = [{ type: "PICKUP", state: "PROPOSED", pickup_details: pickupDetails }];
+  order.ticket_name = `${name.slice(0, 18)} @ ${pickupTime}`.slice(0, 30);
 
   // 1. Create the order with a PICKUP fulfillment.
   const orderRes = await square(env, "/v2/orders", { idempotency_key: `${key}-order`, order });
@@ -154,14 +176,64 @@ async function createOrder(body, env) {
     return json({ error: paymentMessage(paymentRes.errors), details: paymentRes.errors }, paymentRes.status);
   }
   const payment = paymentRes.data.payment;
+  busy.openOrders++;  // count it right away so the next customer sees the busier kitchen
 
   return json({
     orderId: created.id,
     paymentId: payment.id,
     status: payment.status,
     receiptUrl: payment.receipt_url,
+    pickupMinutes,
+    pickupTime,
     ...totals(created),
   });
+}
+
+// ---------- Busy-kitchen pickup times ----------
+
+// How many paid online pickup orders are still being made. Cached for 20s
+// so a page full of customers doesn't hammer Square.
+let busy = { at: 0, live: false, openOrders: 0 };
+async function openOrderCount(env) {
+  if (Date.now() - busy.at < 20000) return busy.openOrders;
+  const since = new Date(Date.now() - MENU.pickup.countOrdersFromLastMinutes * 60000).toISOString();
+  const res = await square(env, "/v2/orders/search", {
+    location_ids: [env.SQUARE_LOCATION_ID],
+    limit: 100,
+    query: {
+      filter: {
+        state_filter: { states: ["OPEN"] },
+        date_time_filter: { created_at: { start_at: since } },
+        fulfillment_filter: { fulfillment_types: ["PICKUP"], fulfillment_states: ["PROPOSED", "RESERVED"] },
+      },
+      sort: { sort_field: "CREATED_AT", sort_order: "DESC" },
+    },
+  });
+  if (!res.ok) {  // Square hiccup: keep the last known count
+    busy.live = false;
+    return busy.openOrders;
+  }
+  // Only paid orders: a declined card leaves an unpaid order behind that nobody is making
+  busy = { at: Date.now(), live: true, openOrders: (res.data.orders || []).filter(o => o.tenders?.length).length };
+  return busy.openOrders;
+}
+
+function statusFor(earliest) {
+  return {
+    earliest,
+    busy: earliest > MENU.pickup.minMinutes,
+    choices: pickupChoices(earliest),
+    live: !!busy.live,  // false = couldn't check Square, so showing normal times
+  };
+}
+
+async function status(env) {
+  return json(statusFor(earliestPickup(await openOrderCount(env))));
+}
+
+// "7:40 PM" in the shop's time zone
+function clockTime(date) {
+  return new Intl.DateTimeFormat("en-US", { timeZone: MENU.hours.timeZone, hour: "numeric", minute: "2-digit" }).format(date);
 }
 
 function paymentMessage(errors = []) {

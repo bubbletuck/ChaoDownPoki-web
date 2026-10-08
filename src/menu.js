@@ -31,6 +31,19 @@ export const MENU = {
     closedDates: [],
   },
 
+  // "When will you pick up?" choices, in minutes from when the order is placed.
+  // When lots of paid online orders are still being made, the earliest time
+  // moves back automatically and the page says we're busy:
+  //   earliest = minMinutes + extraMinutesPerOrder for each order past busyAfterOrders
+  pickup: {
+    choices: [15, 20, 30, 45, 60, 90],
+    minMinutes: 15,
+    busyAfterOrders: 4,
+    extraMinutesPerOrder: 5,
+    maxMinutes: 90,
+    countOrdersFromLastMinutes: 90,
+  },
+
   extraScoopPrice: 400,
   maxExtraScoops: 5,
   maxBowlQuantity: 20,
@@ -44,10 +57,10 @@ export const MENU = {
     { id: "large",      group: "Poke bowls", name: "Large",           detail: "3 scoops",      scoops: 3, price: 1850 },
     { id: "xlarge",     group: "Poke bowls", name: "XLarge",          detail: "5 scoops",      scoops: 5, price: 2150 },
     { id: "vegetarian", group: "Poke bowls", name: "Vegetarian Bowl", detail: "3 scoops tofu", scoops: 3, price: 1650, proteins: ["tofu"] },
-    { id: "kids",       group: "Poke bowls", name: "Kids Bowl",       detail: "1 scoop",       scoops: 1, price: 1100 },
+    { id: "kids",       group: "Poke bowls", name: "Kids Bowl",       detail: "1 scoop",       scoops: 1, price: 1100, maxToppings: 4 },
 
     { id: "teriyaki-chicken",      group: "Teriyaki & chicken bowls", cooked: true, name: "Teriyaki Chicken",     detail: "Comes with a side", price: 1650 },
-    { id: "teriyaki-chicken-kids", group: "Teriyaki & chicken bowls", cooked: true, name: "Teriyaki Chicken",     detail: "Kids size", kids: true, price: 1100 },
+    { id: "teriyaki-chicken-kids", group: "Teriyaki & chicken bowls", cooked: true, name: "Teriyaki Chicken",     detail: "Kids size", kids: true, price: 1100, maxToppings: 4 },
     { id: "teriyaki-salmon",       group: "Teriyaki & chicken bowls", cooked: true, name: "Teriyaki Salmon",      detail: "Comes with a side", price: 1750 },
     { id: "korean-spicy-chicken",  group: "Teriyaki & chicken bowls", cooked: true, name: "Korean Spicy Chicken", detail: "Comes with a side", spice: 2, price: 1650 },
     { id: "chao-chicken",          group: "Teriyaki & chicken bowls", cooked: true, name: "Chao Chicken",         detail: "Comes with a side", price: 1650 },
@@ -58,6 +71,7 @@ export const MENU = {
     { id: "egg-roll",      name: "Egg Roll" },
     { id: "cheese-wonton", name: "Cheese Wonton" },
     { id: "pot-sticker",   name: "Pot Sticker" },
+    { id: "miso-soup",     name: "Miso Soup" },
   ],
 
   bases: [
@@ -152,7 +166,7 @@ export const MENU = {
   //   price: null hides the item from online ordering until a price is set
   extras: [
     { id: "chaodown-fries", group: "Sides", name: "Chaodown Fries", price: 569, choices: [
-      { id: "sauces", name: "Sauces", from: "sauces" },
+      { id: "sauces", name: "Sauces", from: "sauces", max: 5 },
       SAUCE_ON_SIDE,
       { id: "toppings", name: "Toppings", items: [{ id: "green-onions", name: "Green Onions" }] },
     ] },
@@ -167,7 +181,7 @@ export const MENU = {
       { id: "2", name: "2 pcs", price: 499 }, { id: "4", name: "4 pcs", price: 799 } ] },
     { id: "fried-wontons",  group: "Sides", name: "Deep Fried Wontons", price: 499 },
     { id: "tempura-shrimp", group: "Sides", name: "Tempura Shrimp", detail: "4 pcs", price: 900, choices: [
-      { id: "sauces", name: "Sauces", from: "sauces" },
+      { id: "sauces", name: "Sauces", from: "sauces", max: 5 },
       SAUCE_ON_SIDE,
     ] },
     { id: "side-sauce",     group: "Sides", name: "Side of Sauce", detail: "8 oz", price: 500, choices: [
@@ -235,6 +249,40 @@ export function orderingStatus(now = new Date()) {
     return { open: false, message: `Online ordering is closed for today (last orders at ${label(lastOrder)}). We start taking orders again at ${label(open)}.` };
   }
   return { open: true, message: `Taking online orders until ${label(lastOrder)} today.` };
+}
+
+// Minutes until closing time, or null when hours aren't enforced
+export function minutesUntilClose(now = new Date()) {
+  const h = MENU.hours;
+  if (!h.enforced) return null;
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat("en-US", { timeZone: h.timeZone, hour: "2-digit", minute: "2-digit", hourCycle: "h23" })
+      .formatToParts(now).map(p => [p.type, p.value])
+  );
+  const [ch, cm] = h.close.split(":").map(Number);
+  return ch * 60 + cm - (Number(parts.hour) * 60 + Number(parts.minute));
+}
+
+// Earliest pickup (minutes from now) given how many orders are still being made
+export function earliestPickup(openOrders) {
+  const p = MENU.pickup;
+  const extra = Math.max(0, openOrders - p.busyAfterOrders) * p.extraMinutesPerOrder;
+  return Math.min(p.maxMinutes, p.minMinutes + extra);
+}
+
+// Pickup choices a customer can pick right now. order.js has a copy.
+export function pickupChoices(earliest, now = new Date()) {
+  const untilClose = minutesUntilClose(now);
+  return MENU.pickup.choices.filter(m => m >= earliest && (untilClose === null || m <= untilClose));
+}
+
+// US phone number → "+19165550123", or null if it isn't a real 10-digit number
+export function normalizePhone(input) {
+  let digits = String(input || "").replace(/\D/g, "");
+  if (digits.length === 11 && digits[0] === "1") digits = digits.slice(1);
+  // Area code and exchange can't start with 0 or 1
+  if (!/^[2-9]\d{2}[2-9]\d{6}$/.test(digits)) return null;
+  return "+1" + digits;
 }
 
 // " (Seared)" or " (1 Raw, 2 Seared)" for a protein's per-scoop prep list;
@@ -319,6 +367,7 @@ export function bowlToLineItem(bowl) {
 
   const toppings = Array.isArray(bowl.toppings) ? bowl.toppings : [];
   if (new Set(toppings).size !== toppings.length || toppings.some(id => !TOPPINGS[id])) return { error: "Invalid topping" };
+  if (size.maxToppings && toppings.length > size.maxToppings) return { error: `Kids bowls come with up to ${size.maxToppings} toppings` };
 
   const modifiers = [modifier(`Base: ${baseName}`)];
   if (side) modifiers.push(modifier(`Side: ${side.name}`));
@@ -385,6 +434,7 @@ export function extraToLineItem(extra) {
     const options = byId(choiceItems(group));
     if (!Array.isArray(chosen) || new Set(chosen).size !== chosen.length || chosen.some(id => !options[id])) return { error: "Invalid choice" };
     if (group.single && chosen.length > 1) return { error: `Pick one ${group.name.toLowerCase()} for ${item.name}` };
+    if (group.max && chosen.length > group.max) return { error: `Up to ${group.max} ${group.name.toLowerCase()} for ${item.name}` };
     if (group.required && !chosen.length) return { error: `Choose a ${group.name.toLowerCase()} for ${item.name}` };
     if (group.needs && chosen.length && !(picks[group.needs] || []).length) return { error: `Pick a sauce for ${item.name} first` };
     for (const id of chosen) modifiers.push(modifier(`${group.name}: ${options[id].name}`));

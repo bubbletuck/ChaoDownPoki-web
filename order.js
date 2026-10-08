@@ -161,6 +161,7 @@ function bowlProblem(b) {
   if (b.sauces.length && !sauceOn.length) return "Choose where you want your sauce.";
   if (!b.sauces.length && sauceOn.length) return "Pick a sauce first.";
   if (b.toppings.some(id => !TOPPINGS[id])) return "Pick your toppings again.";
+  if (size.maxToppings && b.toppings.length > size.maxToppings) return `Kids bowls come with up to ${size.maxToppings} toppings.`;
   return null;
 }
 
@@ -219,6 +220,7 @@ function extraProblem(x) {
     const chosen = picks[group.id] || [];
     const options = byId(choiceItems(group));
     if (!Array.isArray(chosen) || chosen.some(id => !options[id]) || (group.single && chosen.length > 1)) return `Choose again for ${item.name}.`;
+    if (group.max && chosen.length > group.max) return `Up to ${group.max} ${group.name.toLowerCase()} for ${item.name}.`;
     if (group.required && !chosen.length) return `Choose a ${group.name.toLowerCase()}.`;
     if (group.needs && chosen.length && !(picks[group.needs] || []).length) return "Pick a sauce first.";
   }
@@ -302,8 +304,9 @@ function choiceControl(x, group) {
   }
   if (group.from === "sauces") {
     return `<details class="multi-select" data-ms="${group.id}">
-      <summary aria-label="${label}"><span class="ms-summary">Choose sauces</span></summary>
+      <summary aria-label="${label}"><span class="ms-summary">${saucePrompt(group)}</span></summary>
       <div class="ms-panel">
+        ${group.max ? `<p class="ms-hint" aria-live="polite"></p>` : ""}
         ${MENU.sauces.map(s =>
           `<label class="ms-option"><input type="checkbox" data-group="${group.id}" value="${s.id}"><span>${esc(s.name)}${badges(s)}</span></label>`
         ).join("")}
@@ -316,12 +319,24 @@ function choiceControl(x, group) {
   ).join("");
 }
 
-// Updates a side's dropdown labels and shows "Sauce on the side" only once a sauce is picked
+const saucePrompt = group => group.max ? `Choose up to ${group.max} sauces` : "Choose sauces";
+
+// Updates a side's dropdown labels, locks the rest once the sauce limit is hit,
+// and shows "Sauce on the side" only once a sauce is picked
 function syncExtraRow(row) {
+  const item = EXTRAS[row.dataset.extra];
   row.querySelectorAll("details[data-ms]").forEach(d => {
+    const group = item.choices.find(g => g.id === d.dataset.ms);
     const names = [...d.querySelectorAll("input:checked")].map(i => SAUCES[i.value].name);
-    d.querySelector(".ms-summary").textContent = names.length ? names.join(", ") : "Choose sauces";
+    d.querySelector(".ms-summary").textContent = names.length ? names.join(", ") : saucePrompt(group);
     d.classList.toggle("has", names.length > 0);
+    if (group.max) {
+      const full = names.length >= group.max;
+      d.querySelectorAll("input").forEach(i => i.disabled = full && !i.checked);
+      d.querySelector(".ms-hint").textContent = full
+        ? `That's ${group.max}, the most for one order. Untick one to swap.`
+        : `Pick up to ${group.max}. ${names.length} chosen.`;
+    }
   });
   row.querySelectorAll("[data-needs]").forEach(label => {
     const has = [...row.querySelectorAll(`[data-group="${label.dataset.needs}"]`)].some(el => el.tagName === "SELECT" ? el.value : el.checked);
@@ -366,6 +381,7 @@ function renderExtras(cat) {
     </li>`;
   }).join("");
   decorateBadges($("#extras"));
+  $("#opt-extras").querySelectorAll(".extra-row").forEach(syncExtraRow);
 }
 
 function wireExtras() {
@@ -460,6 +476,15 @@ function syncBuilder() {
   $("#sauce-on-picker").hidden = bowl.sauces.length === 0;
   form.querySelectorAll('input[name="topping"]').forEach(i => i.checked = bowl.toppings.includes(i.value));
 
+  // Kids bowls: up to 4 toppings, so the rest lock once the limit is reached
+  const maxTop = size.maxToppings;
+  const full = maxTop && bowl.toppings.length >= maxTop;
+  form.querySelectorAll('input[name="topping"]').forEach(i => i.disabled = full && !i.checked);
+  $("#topping-note").textContent = maxTop
+    ? `Kids bowls come with up to ${maxTop} toppings. ${bowl.toppings.length} of ${maxTop} chosen.`
+    : "As many as you like.";
+  $("#topping-note").classList.toggle("done", !!full);
+
   // Cooked bowls add the included side; protein becomes optional, paid extras
   $("#step-side").hidden = !size.cooked;
   $("#protein-num").textContent = size.cooked ? "+" : "3";
@@ -549,6 +574,12 @@ function wireBuilder() {
         bowl.side = null;
         if (size.proteins) bowl.proteins = { [size.proteins[0]]: size.scoops };
         else if (wasLocked) bowl.proteins = {};
+      }
+      // Kids bowls have a topping limit: keep the first ones picked
+      if (size.maxToppings && bowl.toppings.length > size.maxToppings) {
+        bowl.toppings = bowl.toppings.slice(0, size.maxToppings);
+        syncBuilder();
+        return builderMessage(`Kids bowls come with up to ${size.maxToppings} toppings, so we kept your first ${size.maxToppings}.`, "error");
       }
     } else if (name === "base") {
       bowl.base = value;
@@ -743,6 +774,69 @@ function requestQuote() {
   }, 250);
 }
 
+// ---------- Phone number ----------
+
+// Same as normalizePhone() in src/menu.js: a real 10-digit US number → "+19165550123"
+function normalizePhone(input) {
+  let digits = String(input || "").replace(/\D/g, "");
+  if (digits.length === 11 && digits[0] === "1") digits = digits.slice(1);
+  if (!/^[2-9]\d{2}[2-9]\d{6}$/.test(digits)) return null;
+  return "+1" + digits;
+}
+
+function checkPhone(showError) {
+  const input = $("#c-phone");
+  const phone = normalizePhone(input.value);
+  if (phone) input.value = `(${phone.slice(2, 5)}) ${phone.slice(5, 8)}-${phone.slice(8)}`;
+  const bad = !phone && (showError || input.value.trim() !== "");
+  $("#phone-msg").textContent = bad ? "Please enter a 10-digit phone number, like (916) 555-0123." : "";
+  $("#phone-msg").classList.toggle("error", bad);
+  input.setAttribute("aria-invalid", bad ? "true" : "false");
+  return phone;
+}
+
+// ---------- Pickup time ----------
+
+let pickupStatus = null;  // { earliest, busy, choices } from /api/status
+let pickupMinutes = null; // the customer's pick
+
+const pickupLabel = m => m < 60 ? `${m} min` : m === 60 ? "1 hr" : m === 90 ? "1½ hr" : `${m / 60} hr`;
+const clockIn = m => new Intl.DateTimeFormat("en-US", { timeZone: MENU.hours.timeZone, hour: "numeric", minute: "2-digit" })
+  .format(new Date(Date.now() + m * 60000));
+
+async function loadPickupStatus() {
+  try {
+    const res = await fetch("/api/status", { cache: "no-store" });
+    if (!res.ok) throw new Error();
+    pickupStatus = await res.json();
+  } catch {
+    // Couldn't check how busy we are: offer the usual times; the Worker still checks
+    if (!pickupStatus) pickupStatus = { earliest: MENU.pickup.minMinutes, busy: false, choices: MENU.pickup.choices };
+  }
+  renderPickup();
+}
+
+// Pickup choices with their clock time; times too soon for a busy kitchen are greyed out
+function renderPickup() {
+  if (!pickupStatus) return;
+  const { busy: isBusy, choices } = pickupStatus;
+  if (!choices.includes(pickupMinutes)) pickupMinutes = null;
+
+  $("#pickup-choices").innerHTML = MENU.pickup.choices.map(m => `
+    <label class="pick pick-card">
+      <input type="radio" name="pickup" value="${m}" ${m === pickupMinutes ? "checked" : ""} ${choices.includes(m) ? "" : "disabled"}>
+      <span><strong>${pickupLabel(m)}</strong><small>${clockIn(m)}</small></span>
+    </label>`).join("");
+
+  const notice = $("#busy-notice");
+  if (!choices.length) {
+    notice.textContent = "It's too close to closing time for online orders. Please call us at (916) 918-2936.";
+  } else if (isBusy) {
+    notice.textContent = `We're busy right now, so the earliest pickup is about ${choices[0]} minutes. Wait times might vary. Thanks for your patience!`;
+  }
+  notice.hidden = !(isBusy || !choices.length);
+}
+
 // ---------- Checkout ----------
 
 function checkoutError(text) {
@@ -787,17 +881,27 @@ function wireCheckout() {
     cartChanged();
   });
 
+  $("#c-phone").addEventListener("blur", () => checkPhone(false));
+  $("#pickup-choices").addEventListener("change", e => {
+    pickupMinutes = Number(e.target.value);
+    checkoutError("");
+  });
+
   $("#checkout-form").addEventListener("submit", async e => {
     e.preventDefault();
     if (busy) return;
     checkoutError("");
 
     const name = $("#c-name").value.trim();
-    const phone = $("#c-phone").value.trim();
     const pickupNote = $("#c-notes").value.trim();
     if (cart.length === 0) return checkoutError("Your order is empty.");
     if (!name) { $("#c-name").focus(); return checkoutError("Please enter a name for pickup."); }
-    if (phone.replace(/\D/g, "").length < 10) { $("#c-phone").focus(); return checkoutError("Please enter a phone number we can reach you at."); }
+    const phone = checkPhone(true);
+    if (!phone) { $("#c-phone").focus(); return checkoutError("Please enter a valid 10-digit phone number."); }
+    if (!pickupMinutes) {
+      $("#pickup-choices input:not(:disabled)")?.focus();
+      return checkoutError("Please choose when you'll pick up your order.");
+    }
     if (!hours.open) return checkoutError(hours.message);
     if (!card || !quote) return;
 
@@ -819,6 +923,7 @@ function wireCheckout() {
             ...orderPayload(),
             customer: { name, phone },
             pickupNote,
+            pickupMinutes,
             sourceId: result.token,
             expectedTotal: quote.total,
             idempotencyKey: attemptKey,
@@ -832,6 +937,11 @@ function wireCheckout() {
 
       const data = await res.json().catch(() => ({}));
       if (data.closed) checkHours();
+      // The kitchen got busier while they were checking out: show the new times
+      if (data.pickupChanged) {
+        pickupStatus = { earliest: data.earliest, busy: data.busy, choices: data.choices };
+        renderPickup();
+      }
       if (res.status === 409 && Number.isInteger(data.total)) {
         quote = { subtotal: data.subtotal, tax: data.tax, total: data.total };
       }
@@ -849,6 +959,7 @@ function wireCheckout() {
 
 function showConfirmation(data, name) {
   $("#confirm-title").textContent = `Thank you, ${name}!`;
+  $("#confirm-pickup").textContent = `Your order will be ready around ${data.pickupTime} (about ${pickupLabel(data.pickupMinutes)}).`;
   $("#confirm-list").innerHTML = cartItemsHtml(cart, false);
   $("#confirm-totals").innerHTML = `
     <dt>Subtotal</dt><dd>${fmt(data.subtotal)}</dd>
@@ -907,6 +1018,9 @@ async function init() {
   initCard();
   checkHours();
   setInterval(checkHours, 30000);
+  // Pickup times: re-check how busy we are (and refresh the clock times) every minute
+  loadPickupStatus();
+  setInterval(loadPickupStatus, 60000);
 }
 
 init();

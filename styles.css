@@ -699,6 +699,32 @@ button.btn { font: inherit; cursor: pointer; }
 .ms-option:hover { background: var(--cream); }
 .ms-option input { width: 18px; height: 18px; flex: none; accent-color: var(--coral); }
 .ms-done { position: sticky; bottom: 0; margin-top: 6px; justify-content: center; }
+.ms-hint { margin: 2px 10px 6px; font-size: 0.82rem; color: var(--ink-soft); }
+.ms-option:has(input:disabled) { opacity: 0.45; cursor: not-allowed; }
+.ms-summary { display: block; overflow: hidden; text-overflow: ellipsis; }
+/* Locked choices (kids topping limit, pickup times too soon while busy) */
+.pick input:disabled + span { opacity: 0.4; cursor: not-allowed; }
+.pick:has(input:disabled) { cursor: not-allowed; }
+
+/* Phone + pickup time */
+.field-msg { font-size: 0.82rem; color: var(--ink-soft); margin: 0; }
+.field-msg.error { color: var(--chili); font-weight: 500; }
+.field input[aria-invalid="true"] { border-color: var(--chili); }
+.pickup-time { border: 0; margin: 0; padding: 0; display: grid; gap: 8px; min-width: 0; }
+.pickup-time legend { font-weight: 700; font-size: 0.92rem; padding: 0; margin-bottom: 6px; }
+.pick-grid.pickup-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.pickup-grid .pick-card > span { padding: 9px 10px; }
+.pickup-grid .pick-card small { font-size: 0.78rem; }
+.busy-notice {
+  margin: 0;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: #fff4dc;
+  border-left: 4px solid var(--mango);
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+.confirm-pickup { font-size: 1.15rem; font-weight: 700; color: var(--sea); margin-bottom: 0.4em; }
 .prep-name small { color: var(--ink-soft); font-weight: 400; }
 
 /* ---------- Order page sidebar ---------- */

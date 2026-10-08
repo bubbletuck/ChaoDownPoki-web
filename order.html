@@ -108,7 +108,7 @@
 
             <div class="build-step">
               <h3><span class="num">5</span> Choose your toppings</h3>
-              <p class="step-note">As many as you like.</p>
+              <p class="step-note" id="topping-note" aria-live="polite">As many as you like.</p>
               <div class="pick-row" id="opt-topping"></div>
             </div>
 
@@ -158,8 +158,17 @@
               </label>
               <label class="field">
                 <span>Phone number</span>
-                <input type="tel" id="c-phone" autocomplete="tel" inputmode="tel" placeholder="(916) 555-0123" required>
+                <input type="tel" id="c-phone" autocomplete="tel" inputmode="tel" placeholder="(916) 555-0123" maxlength="20" required aria-describedby="phone-msg">
+                <small class="field-msg" id="phone-msg" aria-live="polite"></small>
               </label>
+
+              <fieldset class="pickup-time">
+                <legend>When will you pick up?</legend>
+                <p class="busy-notice" id="busy-notice" role="status" hidden></p>
+                <div class="pick-grid pickup-grid" id="pickup-choices" role="radiogroup" aria-label="Pickup time"></div>
+                <p class="field-msg">Wait times may vary when we're busy. We'll have it ready as close to your time as we can.</p>
+              </fieldset>
+
               <label class="field">
                 <span>Pickup notes <small>(optional)</small></span>
                 <textarea id="c-notes" rows="2" maxlength="500" placeholder="Allergies, utensils, anything we should know"></textarea>
@@ -186,7 +195,8 @@
         <div class="confirm-check" aria-hidden="true">✓</div>
         <span class="eyebrow">Order received</span>
         <h1 id="confirm-title" tabindex="-1">Thank you!</h1>
-        <p class="lead">We're making your order now. Pick it up at ChaoDown Poki, 1950 Douglas Blvd, Suite B-3, Roseville. Just give us your name at the counter.</p>
+        <p class="confirm-pickup" id="confirm-pickup"></p>
+        <p class="lead">Pick it up at ChaoDown Poki, 1950 Douglas Blvd, Suite B-3, Roseville. Just give us your name at the counter.</p>
         <ul class="cart-list" id="confirm-list"></ul>
         <dl class="totals" id="confirm-totals"></dl>
         <p class="confirm-meta" id="confirm-meta"></p>
