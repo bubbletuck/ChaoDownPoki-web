@@ -109,7 +109,7 @@ function checkHours() {
 // ---------- Bowl helpers ----------
 
 function newBowl(size = "regular") {
-  return { size, base: null, halves: [], side: null, proteins: {}, prep: {}, sauces: [], sauceOn: [], toppings: [], note: "", quantity: 1 };
+  return { size, base: null, halves: [], side: null, sideAddOns: [], proteins: {}, prep: {}, sauces: [], sauceOn: [], toppings: [], note: "", quantity: 1 };
 }
 
 function scoopCount(b) {
@@ -144,6 +144,8 @@ function bowlProblem(b) {
   const ids = Object.keys(b.proteins);
   if (size.cooked) {
     if (!BOWL_SIDES[b.side]) return "Choose your side.";
+    const addOns = (BOWL_SIDES[b.side].addOns || []).map(a => a.id);
+    if ((b.sideAddOns || []).some(id => !addOns.includes(id))) return "Choose your side again.";
   } else if (b.side) {
     return "Pick your bowl again.";
   }
@@ -165,6 +167,13 @@ function bowlProblem(b) {
   return null;
 }
 
+// "Seaweed, Green Onions" for the side's add-ons, or ""
+function sideAddOns(b) {
+  const addOns = BOWL_SIDES[b.side]?.addOns || [];
+  return (b.sideAddOns || []).map(id => addOns.find(a => a.id === id)?.name).filter(Boolean);
+}
+const sideAddOnNames = b => sideAddOns(b).join(", ");
+
 // Same as prepNote() in src/menu.js: " (Seared)" or " (1 Raw, 2 Seared)"
 function prepNote(protein, list) {
   if (!protein.prep || !Array.isArray(list) || !list.length) return "";
@@ -184,7 +193,7 @@ function bowlDetail(b) {
     BASES[b.base].split
       ? `${BASES[b.base].name} (${b.halves.map(id => BASES[id].name).join(" / ")})`
       : BASES[b.base].name,
-    b.side ? `with ${BOWL_SIDES[b.side].name}` : "",
+    b.side ? `with ${BOWL_SIDES[b.side].name}${sideAddOnNames(b) ? ` (${sideAddOnNames(b).toLowerCase()})` : ""}` : "",
     (SIZES[b.size].cooked && scoopCount(b) ? "Extra protein: " : "") +
     Object.entries(b.proteins).map(([id, n]) =>
       PROTEINS[id].name + (n > 1 ? ` ×${n}` : "") + prepNote(PROTEINS[id], b.prep?.[id])
@@ -463,6 +472,7 @@ function syncBuilder() {
   form.querySelectorAll('input[name="size"]').forEach(i => i.checked = i.value === bowl.size);
   form.querySelectorAll('input[name="base"]').forEach(i => i.checked = i.value === bowl.base);
   form.querySelectorAll('input[name="side"]').forEach(i => i.checked = i.value === bowl.side);
+  syncSideAddOns();
   form.querySelectorAll('input[name="half"]').forEach(i => i.checked = bowl.halves.includes(i.value));
 
   const split = BASES[bowl.base]?.split;
@@ -527,6 +537,21 @@ function syncBuilder() {
   $("#add-btn").textContent = `Add to order · ${fmt(bowlPrice(bowl))}`;
 }
 
+// Free add-ons for the chosen side, e.g. seaweed and green onions in miso soup
+let sideAddOnLayout = null;
+function syncSideAddOns() {
+  const side = SIZES[bowl.size].cooked ? BOWL_SIDES[bowl.side] : null;
+  const addOns = side?.addOns || [];
+  // Only rebuild when the side changes, so ticking a box doesn't lose keyboard focus
+  if (sideAddOnLayout !== (side?.id || "")) {
+    sideAddOnLayout = side?.id || "";
+    $("#side-addon-title").textContent = side ? `Add to your ${side.name.toLowerCase()}` : "";
+    $("#opt-side-addons").innerHTML = addOns.map(a => pick("checkbox", "side-addon", a)).join("");
+  }
+  $("#opt-side-addons").querySelectorAll("input").forEach(i => i.checked = bowl.sideAddOns.includes(i.value));
+  $("#side-addon-picker").hidden = addOns.length === 0;
+}
+
 // "How do you want it?": one Raw / Seared / Cooked (or As is / Warmed up) row per
 // scoop, so 3 scoops of salmon can be 1 raw, 1 seared, 1 cooked
 let prepLayout = "";
@@ -572,6 +597,7 @@ function wireBuilder() {
         bowl.proteins = {};
       } else {
         bowl.side = null;
+        bowl.sideAddOns = [];
         if (size.proteins) bowl.proteins = { [size.proteins[0]]: size.scoops };
         else if (wasLocked) bowl.proteins = {};
       }
@@ -587,7 +613,10 @@ function wireBuilder() {
     } else if (name === "half") {
       // Keep the two most recent picks, so a third tap swaps out the oldest
       bowl.halves = checked ? [...bowl.halves, value].slice(-2) : bowl.halves.filter(id => id !== value);
+    } else if (name === "side-addon") {
+      bowl.sideAddOns = checked ? [...bowl.sideAddOns, value] : bowl.sideAddOns.filter(id => id !== value);
     } else if (name === "side") {
+      bowl.sideAddOns = [];
       bowl.side = value;
     } else if (e.target.dataset.prepId) {
       // One scoop's prep, e.g. the 2nd scoop of salmon → seared
@@ -681,7 +710,7 @@ function loadCart() {
     // Fill in fields added after a cart may have been saved
     const bowls = saved
       .filter(b => b && !isExtra(b) && SIZES[b.size] && b.proteins && Array.isArray(b.sauces) && Array.isArray(b.toppings))
-      .map(b => ({ ...b, prep: normalizePrep(b), halves: b.halves || [], sauceOn: b.sauceOn || (b.sauces.length ? ["protein"] : []) }))
+      .map(b => ({ ...b, prep: normalizePrep(b), halves: b.halves || [], sideAddOns: b.sideAddOns || [], sauceOn: b.sauceOn || (b.sauces.length ? ["protein"] : []) }))
       .filter(b => !bowlProblem(b));
     return [...bowls, ...extras];
   } catch {

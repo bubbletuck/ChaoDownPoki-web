@@ -71,7 +71,7 @@ export const MENU = {
     { id: "egg-roll",      name: "Egg Roll" },
     { id: "cheese-wonton", name: "Cheese Wonton" },
     { id: "pot-sticker",   name: "Pot Sticker" },
-    { id: "miso-soup",     name: "Miso Soup" },
+    { id: "miso-soup",     name: "Miso Soup", addOns: [{ id: "seaweed", name: "Seaweed" }, { id: "green-onions", name: "Green Onions" }] },
   ],
 
   bases: [
@@ -335,6 +335,13 @@ export function bowlToLineItem(bowl) {
   if (size.cooked && !side) return { error: "Choose your side" };
   if (!size.cooked && bowl.side) return { error: "Poke bowls don't come with a side" };
 
+  // Free add-ons for the side (seaweed and green onions in miso soup)
+  const sideAddOns = Array.isArray(bowl.sideAddOns) ? bowl.sideAddOns : [];
+  const allowed = side?.addOns || [];
+  if (new Set(sideAddOns).size !== sideAddOns.length || sideAddOns.some(id => !allowed.some(a => a.id === id))) {
+    return { error: "Invalid side add-on" };
+  }
+
   let scoops = 0;
   for (const [id, count] of proteinEntries) {
     if (!PROTEINS[id]) return { error: "Unknown protein" };
@@ -370,7 +377,10 @@ export function bowlToLineItem(bowl) {
   if (size.maxToppings && toppings.length > size.maxToppings) return { error: `Kids bowls come with up to ${size.maxToppings} toppings` };
 
   const modifiers = [modifier(`Base: ${baseName}`)];
-  if (side) modifiers.push(modifier(`Side: ${side.name}`));
+  if (side) {
+    const extras = sideAddOns.map(id => allowed.find(a => a.id === id).name);
+    modifiers.push(modifier(`Side: ${side.name}${extras.length ? ` (${extras.join(", ")})` : ""}`));
+  }
   for (const [id, count] of proteinEntries) {
     const how = prepNote(PROTEINS[id], prep[id]);
     modifiers.push(modifier(`${size.cooked ? "Add protein" : "Protein"}: ${PROTEINS[id].name}${count > 1 ? ` ×${count}` : ""}${how}`));
